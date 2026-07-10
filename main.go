@@ -1,0 +1,406 @@
+package main
+
+/*
+#include <stdint.h>
+#include <stdlib.h>
+
+typedef struct {
+	void* ptr;
+	size_t len;
+} cliproxy_buffer;
+
+typedef int (*cliproxy_host_call_fn)(void*, const char*, const uint8_t*, size_t, cliproxy_buffer*);
+typedef void (*cliproxy_host_free_fn)(void*, size_t);
+
+typedef struct {
+	uint32_t abi_version;
+	void* host_ctx;
+	cliproxy_host_call_fn call;
+	cliproxy_host_free_fn free_buffer;
+} cliproxy_host_api;
+
+typedef int (*cliproxy_plugin_call_fn)(char*, uint8_t*, size_t, cliproxy_buffer*);
+typedef void (*cliproxy_plugin_free_fn)(void*, size_t);
+typedef void (*cliproxy_plugin_shutdown_fn)(void);
+
+typedef struct {
+	uint32_t abi_version;
+	cliproxy_plugin_call_fn call;
+	cliproxy_plugin_free_fn free_buffer;
+	cliproxy_plugin_shutdown_fn shutdown;
+} cliproxy_plugin_api;
+
+extern int cliproxyPluginCall(char*, uint8_t*, size_t, cliproxy_buffer*);
+extern void cliproxyPluginFree(void*, size_t);
+extern void cliproxyPluginShutdown(void);
+
+static const cliproxy_host_api* stored_host;
+
+static void store_host_api(const cliproxy_host_api* host) {
+	stored_host = host;
+}
+
+static int call_host_api(const char* method, const uint8_t* request, size_t request_len, cliproxy_buffer* response) {
+	if (stored_host == NULL || stored_host->call == NULL) {
+		return 1;
+	}
+	return stored_host->call(stored_host->host_ctx, method, request, request_len, response);
+}
+
+static void free_host_buffer(void* ptr, size_t len) {
+	if (stored_host != NULL && stored_host->free_buffer != NULL && ptr != NULL) {
+		stored_host->free_buffer(ptr, len);
+	}
+}
+*/
+import "C"
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"unsafe"
+
+	"github.com/mortal/cpa-xai-quota-guard/internal/xaiquota"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
+)
+
+const (
+	pluginID   = "cpa-xai-quota-guard"
+	pluginVer  = "0.1.0"
+	pluginAuth = "@mortal"
+	pluginRepo = "https://github.com/mortal/cpa-xai-quota-guard"
+	pluginLogo = ""
+)
+
+func main() {}
+
+func init() {
+	hostCall = cgoHostCall
+}
+
+//export cliproxy_plugin_init
+func cliproxy_plugin_init(host *C.cliproxy_host_api, plugin *C.cliproxy_plugin_api) C.int {
+	if plugin == nil {
+		return 1
+	}
+	C.store_host_api(host)
+	plugin.abi_version = C.uint32_t(pluginabi.ABIVersion)
+	plugin.call = C.cliproxy_plugin_call_fn(C.cliproxyPluginCall)
+	plugin.free_buffer = C.cliproxy_plugin_free_fn(C.cliproxyPluginFree)
+	plugin.shutdown = C.cliproxy_plugin_shutdown_fn(C.cliproxyPluginShutdown)
+	return 0
+}
+
+//export cliproxyPluginCall
+func cliproxyPluginCall(method *C.char, request *C.uint8_t, requestLen C.size_t, response *C.cliproxy_buffer) C.int {
+	if response != nil {
+		response.ptr = nil
+		response.len = 0
+	}
+	if method == nil {
+		writeResponse(response, errorEnvelope("invalid_method", "method is required"))
+		return 1
+	}
+	var requestBytes []byte
+	if request != nil && requestLen > 0 {
+		requestBytes = C.GoBytes(unsafe.Pointer(request), C.int(requestLen))
+	}
+	raw, errHandle := handleMethod(C.GoString(method), requestBytes)
+	if errHandle != nil {
+		writeResponse(response, errorEnvelope("plugin_error", errHandle.Error()))
+		return 1
+	}
+	writeResponse(response, raw)
+	return 0
+}
+
+//export cliproxyPluginFree
+func cliproxyPluginFree(ptr unsafe.Pointer, len C.size_t) {
+	if ptr != nil {
+		C.free(ptr)
+	}
+	_ = len
+}
+
+//export cliproxyPluginShutdown
+func cliproxyPluginShutdown() {
+	shutdownGuard()
+}
+
+func cgoHostCall(method string, request []byte) ([]byte, error) {
+	cMethod := C.CString(method)
+	defer C.free(unsafe.Pointer(cMethod))
+	var resp C.cliproxy_buffer
+	var reqPtr *C.uint8_t
+	var reqLen C.size_t
+	if len(request) > 0 {
+		reqPtr = (*C.uint8_t)(C.CBytes(request))
+		defer C.free(unsafe.Pointer(reqPtr))
+		reqLen = C.size_t(len(request))
+	}
+	code := C.call_host_api(cMethod, reqPtr, reqLen, &resp)
+	if code != 0 {
+		return nil, fmt.Errorf("host call %s code=%d", method, int(code))
+	}
+	if resp.ptr == nil || resp.len == 0 {
+		return []byte(`{}`), nil
+	}
+	raw := C.GoBytes(resp.ptr, C.int(resp.len))
+	C.free_host_buffer(resp.ptr, resp.len)
+	return raw, nil
+}
+
+type envelope struct {
+	OK     bool             `json:"ok"`
+	Result json.RawMessage  `json:"result,omitempty"`
+	Error  *envelopeError   `json:"error,omitempty"`
+}
+
+type envelopeError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func okEnvelope(v any) ([]byte, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(envelope{OK: true, Result: raw})
+}
+
+func okEnvelopeJSON(result string) ([]byte, error) {
+	return json.Marshal(envelope{OK: true, Result: json.RawMessage(result)})
+}
+
+func errorEnvelope(code, message string) []byte {
+	raw, _ := json.Marshal(envelope{OK: false, Error: &envelopeError{Code: code, Message: message}})
+	return raw
+}
+
+func writeResponse(response *C.cliproxy_buffer, raw []byte) {
+	if response == nil || len(raw) == 0 {
+		return
+	}
+	ptr := C.CBytes(raw)
+	if ptr == nil {
+		return
+	}
+	response.ptr = ptr
+	response.len = C.size_t(len(raw))
+}
+
+// ── global guard ─────────────────────────────────────────
+
+var (
+	guardOnce sync.Once
+	guardInst *xaiquota.Guard
+)
+
+func guard() *xaiquota.Guard {
+	guardOnce.Do(func() {
+		cfg := configDefaults()
+		g, err := xaiquota.NewGuard(cfg, dynamicAuth{}, hostLogger{})
+		if err != nil {
+			hostLog("error", "init guard failed: "+err.Error())
+			g, _ = xaiquota.NewGuard(cfg, nil, hostLogger{})
+		}
+		guardInst = g
+		g.StartTicker()
+	})
+	return guardInst
+}
+
+func shutdownGuard() {
+	if guardInst != nil {
+		guardInst.StopTicker()
+	}
+}
+
+// dynamicAuth always uses the latest guard config for management calls.
+type dynamicAuth struct{}
+
+func (dynamicAuth) List() ([]xaiquota.AuthFile, error) {
+	cfg := guard().Config()
+	return newMgmtAuth(cfg).List()
+}
+
+func (dynamicAuth) SetDisabled(authIndex string, disabled bool) (bool, error) {
+	cfg := guard().Config()
+	return newMgmtAuth(cfg).SetDisabled(authIndex, disabled)
+}
+
+func handleMethod(method string, request []byte) ([]byte, error) {
+	switch method {
+	case pluginabi.MethodPluginRegister, pluginabi.MethodPluginReconfigure:
+		return okEnvelope(pluginRegistration(request))
+	case pluginabi.MethodPluginShutdown:
+		shutdownGuard()
+		return okEnvelopeJSON("{}")
+	case pluginabi.MethodUsageHandle:
+		return handleUsageEvent(request)
+	case pluginabi.MethodManagementRegister:
+		return okEnvelope(buildManagementRegistration())
+	case pluginabi.MethodManagementHandle:
+		return handleManagement(request)
+	default:
+		return errorEnvelope("unknown_method", "unknown method: "+method), nil
+	}
+}
+
+type registration struct {
+	SchemaVersion uint32                   `json:"schema_version"`
+	Metadata      pluginapi.Metadata       `json:"metadata"`
+	Capabilities  registrationCapabilities `json:"capabilities"`
+}
+
+type registrationCapabilities struct {
+	UsagePlugin   bool `json:"usage_plugin"`
+	ManagementAPI bool `json:"management_api"`
+}
+
+func pluginRegistration(request []byte) registration {
+	cfg := parseConfigFromReconfigure(request)
+	g := guard()
+	g.ApplyConfig(cfg)
+	return registration{
+		SchemaVersion: pluginabi.SchemaVersion,
+		Metadata: pluginapi.Metadata{
+			Name:             pluginID,
+			Version:          pluginVer,
+			Author:           pluginAuth,
+			GitHubRepository: pluginRepo,
+			Logo:             pluginLogo,
+			ConfigFields:     configFields(),
+		},
+		Capabilities: registrationCapabilities{
+			UsagePlugin:   true,
+			ManagementAPI: true,
+		},
+	}
+}
+
+
+func handleUsageEvent(request []byte) ([]byte, error) {
+	if len(request) == 0 {
+		return okEnvelopeJSON("{}")
+	}
+	var record pluginapi.UsageRecord
+	if err := json.Unmarshal(request, &record); err != nil {
+		return errorEnvelope("decode_usage", err.Error()), nil
+	}
+	ev := usageEventFromRecord(record)
+	guard().HandleUsage(ev)
+	return okEnvelopeJSON("{}")
+}
+
+func usageEventFromRecord(r pluginapi.UsageRecord) xaiquota.UsageEvent {
+	body := ""
+	status := 0
+	if r.Failed {
+		body = r.Failure.Body
+		status = r.Failure.StatusCode
+	}
+	var headers map[string][]string
+	if r.ResponseHeaders != nil {
+		headers = map[string][]string(r.ResponseHeaders)
+	}
+	return xaiquota.UsageEvent{
+		AuthIndex:       r.AuthIndex,
+		Provider:        r.Provider,
+		AuthType:        r.AuthType,
+		Account:         "",
+		Failed:          r.Failed,
+		StatusCode:      status,
+		Body:            body,
+		ResponseHeaders: headers,
+	}
+}
+
+type managementRegistration struct {
+	Routes    []managementRoute    `json:"routes,omitempty"`
+	Resources []managementResource `json:"resources,omitempty"`
+}
+
+type managementRoute struct {
+	Method      string `json:"Method"`
+	Path        string `json:"Path"`
+	Description string `json:"Description"`
+}
+
+type managementResource struct {
+	Path        string `json:"Path"`
+	Menu        string `json:"Menu"`
+	Description string `json:"Description"`
+}
+
+func buildManagementRegistration() managementRegistration {
+	return managementRegistration{
+		Resources: []managementResource{
+			{
+				Path:        "/index.html",
+				Menu:        "xAI Quota Guard",
+				Description: "xAI 短时额度自动禁用与到期恢复",
+			},
+		},
+		Routes: []managementRoute{
+			{Method: "GET", Path: "/cpa-xai-quota-guard/state", Description: "账号状态 JSON"},
+			{Method: "GET", Path: "/cpa-xai-quota-guard/config", Description: "当前配置（脱敏）"},
+			{Method: "POST", Path: "/cpa-xai-quota-guard/toggle", Description: "开关 enabled"},
+			{Method: "POST", Path: "/cpa-xai-quota-guard/run", Description: "手动触发恢复扫描"},
+		},
+	}
+}
+
+func handleManagement(request []byte) ([]byte, error) {
+	var req struct {
+		Method string          `json:"method"`
+		Path   string          `json:"path"`
+		Body   json.RawMessage `json:"body"`
+	}
+	if err := json.Unmarshal(request, &req); err != nil {
+		return errorEnvelope("decode_management", err.Error()), nil
+	}
+	method := req.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+	path := req.Path
+	switch {
+	case method == http.MethodGet && path == "/cpa-xai-quota-guard/state":
+		return okEnvelope(map[string]any{
+			"accounts": guard().Snapshot(),
+		})
+	case method == http.MethodGet && path == "/cpa-xai-quota-guard/config":
+		cfg := guard().Config()
+		return okEnvelope(map[string]any{
+			"enabled":           cfg.Enabled,
+			"tick_seconds":      cfg.TickSeconds,
+			"max_reset_seconds": cfg.MaxResetSeconds,
+			"management_url":    cfg.ManagementURL,
+			"management_key_set": cfg.ManagementKey != "",
+			"state_path":        cfg.StatePath,
+		})
+	case method == http.MethodPost && path == "/cpa-xai-quota-guard/toggle":
+		var body struct {
+			Enabled *bool `json:"enabled"`
+		}
+		_ = json.Unmarshal(req.Body, &body)
+		cfg := guard().Config()
+		if body.Enabled != nil {
+			cfg.Enabled = *body.Enabled
+		} else {
+			cfg.Enabled = !cfg.Enabled
+		}
+		guard().ApplyConfig(cfg)
+		return okEnvelope(map[string]any{"enabled": cfg.Enabled})
+	case method == http.MethodPost && path == "/cpa-xai-quota-guard/run":
+		guard().Tick()
+		return okEnvelopeJSON(`{"ok":true}`)
+	default:
+		return errorEnvelope("not_found", "unknown management path: "+path), nil
+	}
+}

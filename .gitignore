@@ -1,0 +1,14 @@
+bin/
+*.dll
+*.so
+*.h
+CLIProxyAPI-src/
+download.log
+build.log
+data/
+*.json
+!testdata/**
+.env
+test-output.txt
+test-error.txt
+scripts/remote_check_plugins.py

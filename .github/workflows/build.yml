@@ -1,0 +1,97 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: cpa-xai-quota-guard.so
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: cpa-xai-quota-guard.dll
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Fetch CLIProxyAPI SDK source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/router-for-me/CLIProxyAPI ./CLIProxyAPI-src
+          echo "Replaced SDK path: $(pwd)/CLIProxyAPI-src"
+
+      - name: Append replace to go.mod
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '\nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src\n' >> go.mod
+          cat go.mod
+
+      - name: Download dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod download 2>&1 | tee download.log
+          go mod tidy 2>&1 | tee -a download.log || true
+
+      - name: Unit tests (no CGO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./internal/xaiquota/ -count=1 2>&1 | tee test.log
+
+      - name: Build c-shared
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          go build -buildmode=c-shared -trimpath -o "bin/${{ matrix.artifact }}" . 2>&1 | tee build.log
+          ls -la bin || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: bin/${{ matrix.artifact }}
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: '0'
+
+      - name: Upload logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            go.mod
+            download.log
+            test.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 7
