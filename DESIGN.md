@@ -1,7 +1,7 @@
 # cpa-xai-quota-guard 设计文档
 
 > xAI 专用额度/死号管控插件（CLIProxyAPI native Go）  
-> 当前实现版本：**0.2.3**（以 `main.go` 中 `pluginVer` 为准）
+> 当前实现版本：**0.2.4**（以 `main.go` 中 `pluginVer` 为准）
 
 ## 1. 目标
 
@@ -250,3 +250,10 @@ dead credential (401/402/403 白名单)
 - 调度：`tickerLoop` 在 `patrol_enabled && patrol_auth_dir!=""` 时按 `patrol_interval` 触发。
 - 状态同步：删除后 `Store.Remove`；`state` 构建时 prune 不在 CPA inventory 的 tracked 记录。
 - 配置写回：UI 改动经 CPA management plugin config 持久化；功能开关字段为 `quota_guard_enabled`。
+
+
+## 巡查探测模型 (0.2.4)
+
+- 配置项 patrol_model，默认 grok-4.5-build-free。
+- 禁止默认使用无免费额度的付费模型（如硬编码 grok-3），否则会全员 402 spending-limit 误伤。
+- UI 从凭证 GET /models + 建议列表选择；GET .../patrol/models。
