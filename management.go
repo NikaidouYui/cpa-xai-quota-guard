@@ -789,8 +789,9 @@ func patrolStatusResponse() ([]byte, error) {
 	g := guard()
 	status := g.PatrolStatus()
 	return jsonResponse(map[string]any{
-		"ok":     true,
-		"patrol": status,
+		"ok":             true,
+		"patrol":         status,
+		"delete_history": g.ListDeletes(20),
 	})
 }
 
@@ -962,7 +963,6 @@ code{background:#f1f5f9;padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
       </div>
     </div>
     <div id="recoverTip" class="guide" style="display:none;margin-top:.75rem"></div>
-    <div id="delHist" class="muted" style="margin-top:.5rem;font-size:.82rem"></div>
   </div>
   <div class="card">
     <div style="font-weight:600;margin-bottom:.5rem">管理 API 配置（浏览器鉴权）</div>
@@ -989,7 +989,7 @@ code{background:#f1f5f9;padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
   </div>
   <div class="card" id="patrolCard">
     <div class="row" style="justify-content:space-between;gap:.5rem;margin-bottom:.35rem">
-      <div style="font-weight:700">主动巡查 (Patrol)</div>
+      <div style="font-weight:700">主动巡查</div>
       <div class="muted" style="font-size:.78rem" id="patrolHint">全量探测所有启用的 xAI 凭证，自动删除 403/401/402 死号</div>
     </div>
     <div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
@@ -1015,6 +1015,17 @@ code{background:#f1f5f9;padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
         </tr></thead>
         <tbody id="patrolLogBody"></tbody>
       </table>
+    </div>
+    <div id="patrolDelHist" style="margin-top:.7rem;display:none">
+      <div style="font-weight:600;margin-bottom:.3rem;font-size:.82rem;color:var(--muted)">删除历史（最近 20 条）</div>
+      <div style="max-height:200px;overflow-y:auto;font-size:.78rem">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="text-align:left;color:var(--muted);border-bottom:1px solid var(--border)">
+            <th style="padding:.25rem">时间</th><th>账号</th><th>来源</th><th>原因</th>
+          </tr></thead>
+          <tbody id="patrolDelBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
   <div class="card">
@@ -1409,18 +1420,29 @@ function paintStatusBar(d){
       tip.innerHTML = "";
     }
   }
-  // live countdown cells without full re-fetch
-  const nowMs = Date.now();
-  const dh = document.getElementById("delHist");
-  if(dh){
-    const items = d.delete_history || [];
-    if(!items.length){ dh.textContent = "最近删除：无"; }
-    else {
-      dh.innerHTML = "最近删除：" + items.slice(0,5).map(function(x){
-        return esc((x.account||x.file_name||x.auth_index||"?")) + " @" + fmtTime(x.deleted_at_ms);
-      }).join(" · ");
+  // render delete history into patrol card
+  var dhItems = d.delete_history || [];
+  var dhWrap = document.getElementById("patrolDelHist");
+  var dhBody = document.getElementById("patrolDelBody");
+  if(dhWrap && dhBody){
+    if(dhItems.length){
+      dhWrap.style.display = "";
+      dhBody.innerHTML = dhItems.slice(0,20).map(function(x){
+        var src = (x.reason||"").indexOf("patrol:")>=0 ? "巡查" : "额度";
+        return '<tr style="border-bottom:1px solid #f1f5f9">' +
+          '<td style="padding:.2rem">'+fmtTime(x.deleted_at_ms)+'</td>' +
+          '<td>'+esc(x.account||x.file_name||x.auth_index||"?")+'</td>' +
+          '<td style="font-weight:600">'+src+'</td>' +
+          '<td style="color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis">'+esc(x.reason||"")+'</td>' +
+        '</tr>';
+      }).join("");
+    } else {
+      dhWrap.style.display = "none";
     }
   }
+  // live countdown cells without full re-fetch
+  const nowMs = Date.now();
+
   document.querySelectorAll("[data-recover-ms]").forEach(function(el){
     const ms = Number(el.getAttribute("data-recover-ms")||0);
     const cd = fmtCountdown(ms, nowMs);
@@ -1750,7 +1772,7 @@ function extractPatrol(r){
   if(r.patrol) return r.patrol;
   return null;
 }
-function paintPatrol(p){
+function paintPatrol(p, r){
   if(!p) return;
   document.getElementById("patrolProgress").style.display = "";
   document.getElementById("patrolLog").style.display = "";
@@ -1799,6 +1821,26 @@ function paintPatrol(p){
       '<td style="color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(e.reason||"")+'</td>' +
     '</tr>';
   }).join("");
+  // render delete history from patrol/status payload
+  var dh = (r && r.delete_history) || (p && p.delete_history) || [];
+  var dhWrap = document.getElementById("patrolDelHist");
+  var dhBody = document.getElementById("patrolDelBody");
+  if(dhWrap && dhBody){
+    if(dh && dh.length){
+      dhWrap.style.display = "";
+      dhBody.innerHTML = dh.slice(0,20).map(function(x){
+        var src = (x.reason||"").indexOf("patrol:")>=0 ? "巡查" : "额度";
+        return '<tr style="border-bottom:1px solid #f1f5f9">' +
+          '<td style="padding:.2rem">'+fmtTime(x.deleted_at_ms)+'</td>' +
+          '<td>'+esc(x.account||x.file_name||x.auth_index||"?")+'</td>' +
+          '<td style="font-weight:600">'+src+'</td>' +
+          '<td style="color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis">'+esc(x.reason||"")+'</td>' +
+        '</tr>';
+      }).join("");
+    } else {
+      dhWrap.style.display = "none";
+    }
+  }
 }
 async function patrolStart(){
   var btn = document.getElementById("patrolBtn");
@@ -1811,7 +1853,7 @@ async function patrolStart(){
   try {
     var r = await api("patrol", {method:"POST"});
     if(!r || !r.ok){ alert("巡查启动失败: "+JSON.stringify(r&&r.error||r)); btn.disabled=false; btn.textContent="启动巡查"; return; }
-    paintPatrol(extractPatrol(r));
+    paintPatrol(extractPatrol(r), r);
     if(PATROL_POLL) clearInterval(PATROL_POLL);
     PATROL_POLL = setInterval(patrolPoll, 1500);
     patrolPoll();
@@ -1830,7 +1872,7 @@ async function patrolPoll(){
   if(!r || !r.ok) return;
   var p = extractPatrol(r);
   if(!p) return;
-  paintPatrol(p);
+  paintPatrol(p, r);
   if(!p.running && PATROL_POLL){ clearInterval(PATROL_POLL); PATROL_POLL = null; }
 }
 // page open: sync last patrol status once

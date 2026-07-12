@@ -178,16 +178,10 @@ func (m *mgmtAuth) List() ([]xaiquota.AuthFile, error) {
 			Failed:    f.Failed,
 		})
 	}
-	// Guard: do not replace a large known inventory with an empty successful response
-	// (auth-files partial/empty under load has been observed operationally).
-	// But if cache is older than 2min, accept empty as real (all creds may be deleted).
-	if len(out) == 0 && len(staleSnap) > 50 && staleKey == cacheKey && !staleAt.IsZero() && time.Since(staleAt) < 2*time.Minute {
-		authListCacheMu.Lock()
-		authListLastErr = "empty auth-files response; kept sticky inventory"
-		authListLastStale = true
-		authListCacheMu.Unlock()
-		return staleSnap, nil
-	}
+	// Sticky guard removed: a successful empty response from CPA means
+	// all credentials were deleted (e.g. after patrol sweep). Accept as real.
+	// Sticky protection only applies to network/decode errors above, not to
+	// a valid HTTP 200 with zero files.
 	xt, xe, xd := recountXAI(out)
 	authListCacheMu.Lock()
 	authListCacheAt = time.Now()
@@ -202,12 +196,17 @@ func (m *mgmtAuth) List() ([]xaiquota.AuthFile, error) {
 	return out, nil
 }
 
-// invalidateAuthListCache drops cached inventory after mutate ops.
+// invalidateAuthListCache drops cached inventory and all derived metrics after mutate ops.
 func invalidateAuthListCache() {
 	authListCacheMu.Lock()
 	authListCacheData = nil
 	authListCacheAt = time.Time{}
 	authListCacheKey = ""
+	authListLastErr = ""
+	authListLastStale = false
+	authListLastXAI = 0
+	authListLastEn = 0
+	authListLastDis = 0
 	authListCacheMu.Unlock()
 }
 
