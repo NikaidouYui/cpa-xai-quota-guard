@@ -61,7 +61,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/mortal/cpa-xai-quota-guard/internal/xaiquota"
+	"github.com/NikaidouYui/cpa-xai-quota-guard/internal/xaiquota"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
@@ -70,7 +70,7 @@ const (
 	pluginID   = "cpa-xai-quota-guard"
 	pluginVer  = "0.2.23"
 	pluginAuth = "@mortal"
-	pluginRepo = "https://github.com/mortal/cpa-xai-quota-guard"
+	pluginRepo = "https://github.com/NikaidouYui/cpa-xai-quota-guard"
 	pluginLogo = ""
 )
 

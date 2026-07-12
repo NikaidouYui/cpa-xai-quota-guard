@@ -39,7 +39,7 @@ plugins:
   enabled: true
   dir: "plugins"
   store-sources:
-    - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
   configs:
     cpa-xai-quota-guard:
       enabled: true

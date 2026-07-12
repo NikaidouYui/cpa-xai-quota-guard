@@ -145,7 +145,7 @@ plugins:
   enabled: true
   dir: "plugins"
   store-sources:
-    - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
   configs:
     cpa-xai-quota-guard:
       enabled: true
@@ -163,7 +163,14 @@ plugins:
 | macOS arm64 | `plugins/darwin/arm64/cpa-xai-quota-guard.dylib` |
 | Windows amd64 | `plugins/windows/amd64/cpa-xai-quota-guard.dll` |
 
-构建产物与 zip **不要提交进 git**；发版走 GitHub Release（tag `v*` 触发 CI）。
+构建产物与 zip **不要提交进 git**；发版走 GitHub Release：
+
+```bash
+git tag v0.2.23
+git push origin v0.2.23
+```
+
+`.github/workflows/build.yml` 在 `tag v*` 时会构建多平台 zip 并创建 Release（含 `checksums.txt`）。
 
 ## 构建与部署
 

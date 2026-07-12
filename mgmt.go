@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mortal/cpa-xai-quota-guard/internal/xaiquota"
+	"github.com/NikaidouYui/cpa-xai-quota-guard/internal/xaiquota"
 )
 
 // hostLogger adapts host.log to xaiquota.Logger.

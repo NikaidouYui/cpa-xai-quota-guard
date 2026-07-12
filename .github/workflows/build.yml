@@ -8,9 +8,33 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Fetch CLIProxyAPI SDK source
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/router-for-me/CLIProxyAPI ./CLIProxyAPI-src
+          go mod download || true
+
+      - name: Test
+        run: go test ./internal/xaiquota/ -count=1
+
   build:
     name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -19,79 +43,183 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             goarch: amd64
-            artifact: cpa-xai-quota-guard.so
+            ext: .so
+            zip_name: cpa-xai-quota-guard_linux_amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            ext: .so
+            zip_name: cpa-xai-quota-guard_linux_arm64
+            cc: aarch64-linux-gnu-gcc
+            install_cc: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            ext: .dylib
+            zip_name: cpa-xai-quota-guard_darwin_amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: .dylib
+            zip_name: cpa-xai-quota-guard_darwin_arm64
           - os: windows-latest
             goos: windows
             goarch: amd64
-            artifact: cpa-xai-quota-guard.dll
+            ext: .dll
+            zip_name: cpa-xai-quota-guard_windows_amd64
+          - os: windows-latest
+            goos: windows
+            goarch: arm64
+            ext: .dll
+            zip_name: cpa-xai-quota-guard_windows_arm64
 
     steps:
-      - name: Checkout plugin
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Install cross compiler (linux/arm64)
+        if: matrix.install_cc != ''
+        run: ${{ matrix.install_cc }}
 
       - name: Fetch CLIProxyAPI SDK source
         shell: bash
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/router-for-me/CLIProxyAPI ./CLIProxyAPI-src
-          echo "Replaced SDK path: $(pwd)/CLIProxyAPI-src"
+          go mod download 2>&1 | tee download.log || true
 
-      - name: Append replace to go.mod
+      - name: Build c-shared and package zip
         shell: bash
-        run: |
-          set -euo pipefail
-          printf '\nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src\n' >> go.mod
-          cat go.mod
-
-      - name: Download dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          go mod download 2>&1 | tee download.log
-          go mod tidy 2>&1 | tee -a download.log || true
-
-      - name: Unit tests (no CGO)
-        shell: bash
-        run: |
-          set -euo pipefail
-          go test ./internal/xaiquota/ -count=1 2>&1 | tee test.log
-
-      - name: Build c-shared
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '1'
-        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p bin
-          go build -buildmode=c-shared -trimpath -o "bin/${{ matrix.artifact }}" . 2>&1 | tee build.log
-          ls -la bin || true
+          mkdir -p bin dist
+          OUT="bin/cpa-xai-quota-guard${{ matrix.ext }}"
 
-      - name: Upload artifact
+          # Only force CC for cross-compiles; empty CC breaks native toolchains.
+          if [[ -n "${{ matrix.cc }}" ]]; then
+            export CC="${{ matrix.cc }}"
+          fi
+
+          # Windows arm64 may lack a working CGO toolchain on the runner.
+          set +e
+          go build -buildmode=c-shared -trimpath -ldflags="-s -w" -o "$OUT" . 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [[ $code -ne 0 ]]; then
+            if [[ "${{ matrix.goos }}" == "windows" && "${{ matrix.goarch }}" == "arm64" ]]; then
+              echo "WARN: windows/arm64 build failed (toolchain); skipping artifact"
+              exit 0
+            fi
+            exit $code
+          fi
+
+          ls -la bin
+
+          # CPA layout inside zip: <goos>/<goarch>/cpa-xai-quota-guard.so|dll|dylib
+          STAGE="dist/stage/${{ matrix.goos }}/${{ matrix.goarch }}"
+          mkdir -p "$STAGE"
+          cp -f "$OUT" "$STAGE/cpa-xai-quota-guard${{ matrix.ext }}"
+
+          ZIP_NAME="${{ matrix.zip_name }}.zip"
+          (
+            cd dist/stage
+            if command -v zip >/dev/null 2>&1; then
+              zip -r "../${ZIP_NAME}" "${{ matrix.goos }}"
+            else
+              # Windows runners usually lack zip; use Python stdlib
+              python - <<PY
+          import pathlib, zipfile
+          root = pathlib.Path("${{ matrix.goos }}")
+          zip_path = pathlib.Path("..") / "${ZIP_NAME}"
+          with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+              for p in root.rglob("*"):
+                  if p.is_file():
+                      zf.write(p, p.as_posix())
+          print("wrote", zip_path.resolve())
+          PY
+            fi
+          )
+          ls -la dist
+
+      - name: Upload library artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: bin/${{ matrix.artifact }}
+          name: lib-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/cpa-xai-quota-guard${{ matrix.ext }}
           if-no-files-found: warn
-          retention-days: 30
-          compression-level: '0'
+          retention-days: 14
 
-      - name: Upload logs (always)
+      - name: Upload zip package
+        uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.zip_name }}
+          path: dist/${{ matrix.zip_name }}.zip
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: logs-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: log-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            go.mod
             download.log
-            test.log
             build.log
           if-no-files-found: ignore
           retention-days: 7
+
+  release:
+    name: GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all zip artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: zip-*
+          merge-multiple: true
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-out
+          find release-assets -type f -name '*.zip' -print
+          # flatten into release-out/
+          while IFS= read -r -d '' f; do
+            cp -f "$f" "release-out/$(basename "$f")"
+          done < <(find release-assets -type f -name '*.zip' -print0)
+          cd release-out
+          ls -la
+          count=$(find . -maxdepth 1 -type f -name '*.zip' | wc -l | tr -d ' ')
+          if [[ "$count" -eq 0 ]]; then
+            echo "ERROR: no zip assets for release"
+            exit 1
+          fi
+          sha256sum *.zip | tee checksums.txt
+          echo "Prepared $count zip(s) + checksums.txt"
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-out/*.zip
+            release-out/checksums.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

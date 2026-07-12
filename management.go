@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mortal/cpa-xai-quota-guard/internal/xaiquota"
+	"github.com/NikaidouYui/cpa-xai-quota-guard/internal/xaiquota"
 )
 
 // managementRequest mirrors the request the host delivers to management.handle.

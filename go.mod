@@ -1,4 +1,4 @@
-module github.com/mortal/cpa-xai-quota-guard
+module github.com/NikaidouYui/cpa-xai-quota-guard
 
 go 1.24.0
 

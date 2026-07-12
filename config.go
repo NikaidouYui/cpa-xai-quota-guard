@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mortal/cpa-xai-quota-guard/internal/xaiquota"
+	"github.com/NikaidouYui/cpa-xai-quota-guard/internal/xaiquota"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 	"gopkg.in/yaml.v3"
 )
