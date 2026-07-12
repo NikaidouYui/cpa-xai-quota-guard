@@ -33,8 +33,9 @@ type Config struct {
 	PatrolInterval  float64
 	PatrolTimeout   float64
 	PatrolBatchSize int
-	PatrolAuthDir    string
-	PatrolProxyURL  string
+	PatrolAuthDir     string
+	PatrolProxyURL   string
+	PatrolConcurrency int
 }
 
 // Defaults returns safe defaults. enabled=false until configured.
@@ -51,6 +52,8 @@ func Defaults() Config {
 			PatrolTimeout:    15,
 			PatrolBatchSize:  0,
 			PatrolAuthDir:    "",
+			PatrolProxyURL:    "",
+			PatrolConcurrency: 8,
 	}
 }
 

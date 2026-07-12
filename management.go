@@ -1741,52 +1741,52 @@ async function inject(){
 })();
 // ===== Patrol =====
 var PATROL_POLL = null;
-async function patrolStart(){
-  var btn = document.getElementById("patrolBtn");
-  btn.disabled = true;
-  btn.textContent = "巡查中...";
-  document.getElementById("patrolStopBtn").style.display = "";
+function extractPatrol(r){
+  if(!r) return null;
+  // api() returns {ok, result, error}; result may be body object or nested.
+  var body = (r.result != null) ? r.result : r;
+  if(body && body.patrol) return body.patrol;
+  if(body && (body.running != null || body.total_probed != null)) return body;
+  if(r.patrol) return r.patrol;
+  return null;
+}
+function paintPatrol(p){
+  if(!p) return;
   document.getElementById("patrolProgress").style.display = "";
   document.getElementById("patrolLog").style.display = "";
-  try {
-    var r = await api("patrol", {method:"POST"});
-    if(!r || !r.ok){ alert("巡查启动失败: "+JSON.stringify(r&&r.error||r)); return; }
-    if(PATROL_POLL) clearInterval(PATROL_POLL);
-    PATROL_POLL = setInterval(patrolPoll, 2000);
-    patrolPoll();
-  } finally {
-    btn.disabled = false;
-  }
-}
-async function patrolStop(){
-  await api("patrol/stop", {method:"POST"});
-}
-async function patrolPoll(){
-  var r = await api("patrol/status", {method:"GET"});
-  if(!r || !r.ok) return;
-  var p = r.patrol || {};
-  var running = p.running;
-  document.getElementById("patrolProbed").textContent = p.total_probed || 0;
-  document.getElementById("patrolAlive").textContent = p.total_alive || 0;
-  document.getElementById("patrolDeleted").textContent = p.total_deleted || 0;
-  document.getElementById("patrolErrors").textContent = p.total_errors || 0;
-  // Progress bar
-  var pct = 0;
-  if(p.total_probed > 0) pct = Math.round((p.total_alive + p.total_deleted + p.total_errors) / p.total_probed * 100);
+  var probed = Number(p.total_probed||0);
+  var alive = Number(p.total_alive||0);
+  var deleted = Number(p.total_deleted||0);
+  var errors = Number(p.total_errors||0);
+  var skipped = Number(p.total_skipped||0);
+  var candidates = Number(p.total_candidates||0);
+  var workers = Number(p.workers||0);
+  document.getElementById("patrolProbed").textContent = probed;
+  document.getElementById("patrolAlive").textContent = alive;
+  document.getElementById("patrolDeleted").textContent = deleted;
+  document.getElementById("patrolErrors").textContent = errors;
+  var denom = candidates > 0 ? candidates : (probed || 1);
+  var pct = Math.min(100, Math.round(probed / denom * 100));
   document.getElementById("patrolBar").style.width = pct + "%";
   var st = document.getElementById("patrolStatus");
-  if(running){
-    st.textContent = "巡查中... 已探测 " + p.total_probed;
+  var extra = "";
+  if(workers > 0) extra += " · " + workers + "线程";
+  if(candidates > 0) extra += " · 候选 " + candidates;
+  if(skipped > 0) extra += " · 跳过 " + skipped;
+  if(p.running){
+    st.textContent = "巡查中... 已探测 " + probed + "/" + (candidates||"?") + extra;
     st.style.color = "var(--accent)";
+    document.getElementById("patrolBtn").textContent = "巡查中...";
+    document.getElementById("patrolBtn").disabled = true;
+    document.getElementById("patrolStopBtn").style.display = "";
   } else {
-    st.textContent = "已完成 · 探测 " + p.total_probed + " · 删除 " + p.total_deleted;
+    var err = p.last_error ? (" · 错误: " + p.last_error) : "";
+    st.textContent = "已完成 · 探测 " + probed + " · 删除 " + deleted + " · 存活 " + alive + extra + err;
     st.style.color = "var(--muted)";
     document.getElementById("patrolBtn").textContent = "启动巡查";
     document.getElementById("patrolBtn").disabled = false;
     document.getElementById("patrolStopBtn").style.display = "none";
-    if(PATROL_POLL){ clearInterval(PATROL_POLL); PATROL_POLL = null; }
   }
-  // Render log
   var log = p.recent_log || [];
   var tbody = document.getElementById("patrolLogBody");
   tbody.innerHTML = log.map(function(e){
@@ -1799,9 +1799,42 @@ async function patrolPoll(){
       '<td style="color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(e.reason||"")+'</td>' +
     '</tr>';
   }).join("");
-  // Reverse newest first
-  tbody.querySelectorAll("tr").forEach(function(){}); // already in order
 }
+async function patrolStart(){
+  var btn = document.getElementById("patrolBtn");
+  btn.disabled = true;
+  btn.textContent = "巡查中...";
+  document.getElementById("patrolStopBtn").style.display = "";
+  document.getElementById("patrolProgress").style.display = "";
+  document.getElementById("patrolLog").style.display = "";
+  document.getElementById("patrolStatus").textContent = "启动中...";
+  try {
+    var r = await api("patrol", {method:"POST"});
+    if(!r || !r.ok){ alert("巡查启动失败: "+JSON.stringify(r&&r.error||r)); btn.disabled=false; btn.textContent="启动巡查"; return; }
+    paintPatrol(extractPatrol(r));
+    if(PATROL_POLL) clearInterval(PATROL_POLL);
+    PATROL_POLL = setInterval(patrolPoll, 1500);
+    patrolPoll();
+  } catch(e){
+    alert("巡查启动异常: "+(e&&e.message?e.message:e));
+    btn.disabled = false;
+    btn.textContent = "启动巡查";
+  }
+}
+async function patrolStop(){
+  await api("patrol/stop", {method:"POST"});
+  setTimeout(patrolPoll, 300);
+}
+async function patrolPoll(){
+  var r = await api("patrol/status", {method:"GET"});
+  if(!r || !r.ok) return;
+  var p = extractPatrol(r);
+  if(!p) return;
+  paintPatrol(p);
+  if(!p.running && PATROL_POLL){ clearInterval(PATROL_POLL); PATROL_POLL = null; }
+}
+// page open: sync last patrol status once
+setTimeout(function(){ try{ patrolPoll(); }catch(e){} }, 800);
 </script></body></html>`
 	return []byte(tpl)
 }
