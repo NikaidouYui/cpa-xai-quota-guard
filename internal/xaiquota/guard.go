@@ -210,6 +210,7 @@ func (g *Guard) tickerLoop() {
 			if patrolInterval <= 0 { patrolInterval = 3600 * time.Second }
 			now := time.Now()
 			if patrolNext.IsZero() || now.After(patrolNext) {
+				g.logf("info", "patrol 定时巡查触发 interval=%v next≈%v", patrolInterval, now.Add(patrolInterval).Format("15:04:05"))
 				patrolNext = now.Add(patrolInterval)
 				go g.PatrolSweep()
 			}
