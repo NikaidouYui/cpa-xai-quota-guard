@@ -995,8 +995,25 @@ func renderConsole() []byte {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>xAI Quota Guard</title>
 <style>
-:root{--bg:#f4f7fb;--card:#fff;--text:#0f172a;--muted:#64748b;--accent:#0d9488;--warn:#b45309;--err:#b91c1c;--ok:#047857;--border:#e2e8f0}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 600px at 10% -10%,#ccfbf1 0%,transparent 55%),linear-gradient(160deg,#f8fafc,#eef2ff 55%,#f1f5f9);color:var(--text);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;padding:1.25rem}
+:root,:root[data-theme="light"]{
+--bg:#f4f7fb;--card:#fff;--card2:#f8fafc;--text:#0f172a;--muted:#64748b;--accent:#0d9488;--accent2:#14b8a6;--warn:#b45309;--err:#b91c1c;--ok:#047857;--border:#e2e8f0;--soft:#eef2f7;--shadow:rgba(15,23,42,.06);--chip:#f8fafc;--thead:#f8fafc;--row-hover:#f8fafc;--body-bg:radial-gradient(1200px 600px at 10% -10%,#ccfbf1 0%,transparent 55%),linear-gradient(160deg,#f8fafc,#eef2ff 55%,#f1f5f9)
+}
+:root[data-theme="dark"]{
+--bg:#0f172a;--card:#111827;--card2:#0b1220;--text:#e2e8f0;--muted:#94a3b8;--accent:#2dd4bf;--accent2:#14b8a6;--warn:#fbbf24;--err:#f87171;--ok:#34d399;--border:#334155;--soft:#1e293b;--shadow:rgba(0,0,0,.35);--chip:#1e293b;--thead:#0b1220;--row-hover:#1e293b;--body-bg:radial-gradient(1000px 500px at 0% 0%,#134e4a 0%,transparent 50%),linear-gradient(165deg,#0b1220,#111827 50%,#0f172a)
+}
+*{box-sizing:border-box}body{margin:0;background:var(--body-bg);color:var(--text);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;padding:1.25rem}
+.theme-toggle{display:inline-flex;align-items:center;gap:.35rem;font-size:.82rem}
+.chart-box{margin-top:.85rem;padding:.7rem .75rem;border:1px solid var(--border);border-radius:12px;background:linear-gradient(180deg,var(--card2),var(--card))}
+.chart-box h3{margin:0 0 .55rem;font-size:.78rem;font-weight:700;color:var(--accent)}
+.chart-bars{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem;align-items:end;height:110px}
+.chart-col{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:.3rem;height:100%}
+.chart-bar{width:100%;max-width:48px;border-radius:8px 8px 4px 4px;background:linear-gradient(180deg,var(--accent2),var(--accent));min-height:4px;transition:height .35s ease}
+.chart-bar.warn{background:linear-gradient(180deg,#fbbf24,#d97706)}
+.chart-bar.err{background:linear-gradient(180deg,#f87171,#dc2626)}
+.chart-bar.ok{background:linear-gradient(180deg,#34d399,#059669)}
+.chart-lbl{font-size:.7rem;color:var(--muted);text-align:center}
+.chart-val{font-size:.78rem;font-weight:700;font-variant-numeric:tabular-nums}
+.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;flex-wrap:wrap;margin-bottom:.25rem}
 .wrap{max-width:1080px;margin:0 auto}
 h1{font-size:1.3rem;margin:0 0 .35rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
 .sub{color:var(--muted);font-size:.9rem;margin-bottom:1rem}
@@ -1012,29 +1029,38 @@ button.off:hover{background:#fef2f2}
 .status-dot.off{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.2)}
 .badge.muted{background:#f1f5f9;color:var(--muted);border-color:var(--border)}
 .grid{display:grid;gap:1rem}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;box-shadow:0 1px 3px var(--shadow)}
 .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
 .stats-wrap{display:grid;gap:.85rem;margin-top:.9rem}
-.stats-group{background:linear-gradient(180deg,#f8fafc 0%,#fff 100%);border:1px solid var(--border);border-radius:12px;padding:.7rem .75rem .85rem}
-.stats-group h3{margin:0 0 .55rem;font-size:.78rem;font-weight:700;color:#0f766e;letter-spacing:.04em;text-transform:none;display:flex;align-items:center;gap:.4rem}
+.stats-group{background:linear-gradient(180deg,var(--card2) 0%,var(--card) 100%);border:1px solid var(--border);border-radius:12px;padding:.7rem .75rem .85rem}
+.stats-group h3{margin:0 0 .55rem;font-size:.78rem;font-weight:700;color:var(--accent);letter-spacing:.04em;text-transform:none;display:flex;align-items:center;gap:.4rem}
 .stats-group h3::before{content:"";width:.35rem;height:.35rem;border-radius:50%;background:var(--accent);display:inline-block}
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65rem}
-@media (max-width:960px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:560px){.stats{grid-template-columns:1fr}}
-.stat{background:#fff;border:1px solid var(--border);border-radius:10px;padding:.7rem .75rem;min-height:84px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 1px 2px rgba(15,23,42,.03)}
-.stat.accent{border-color:#99f6e4;background:linear-gradient(160deg,#f0fdfa,#fff)}
-.stat.warn{border-color:#fcd34d;background:linear-gradient(160deg,#fffbeb,#fff)}
+@media (max-width:960px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.chart-bars{grid-template-columns:repeat(2,minmax(0,1fr));height:150px}}
+@media (max-width:560px){
+body{padding:.75rem}
+.stats{grid-template-columns:1fr}
+.chart-bars{grid-template-columns:1fr 1fr}
+.row button,.row .btn{flex:1 1 auto}
+.acc-table-wrap{height:min(60vh,520px);max-height:min(60vh,520px)}
+#actionLogBox,#patrolLog > div{height:220px}
+h1{font-size:1.1rem}
+input,select,button{font-size:.86rem}
+}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.7rem .75rem;min-height:84px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 1px 2px var(--shadow)}
+.stat.accent{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 12%,var(--card)),var(--card))}
+.stat.warn{border-color:color-mix(in srgb,var(--warn) 50%,var(--border));background:linear-gradient(160deg,color-mix(in srgb,var(--warn) 12%,var(--card)),var(--card))}
 .stat b{display:block;font-size:1.28rem;margin:.2rem 0 .15rem;line-height:1.15;font-variant-numeric:tabular-nums;letter-spacing:-.02em;word-break:break-all}
-.stat .unit{font-size:.72rem;font-weight:600;color:#0f766e;margin-left:.2rem}
+.stat .unit{font-size:.72rem;font-weight:600;color:var(--accent);margin-left:.2rem}
 .stat span.lbl{color:var(--muted);font-size:.78rem;font-weight:600}
 .stat .sub{color:var(--muted);font-size:.72rem;line-height:1.35;margin-top:auto}
-.stat .bar{height:4px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-top:.45rem}
+.stat .bar{height:4px;background:var(--soft);border-radius:999px;overflow:hidden;margin-top:.45rem}
 .stat .bar>i{display:block;height:100%;background:linear-gradient(90deg,#14b8a6,#0d9488);border-radius:999px;width:0%}
-button,.btn{appearance:none;border:1px solid var(--border);background:#fff;color:var(--text);border-radius:10px;padding:.45rem .8rem;font-size:.88rem;cursor:pointer}
+button,.btn{appearance:none;border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:10px;padding:.45rem .8rem;font-size:.88rem;cursor:pointer}
 button.primary{background:var(--accent);border-color:#0f766e;color:#fff}
 button.warn{background:#fff7ed;border-color:#fdba74;color:#9a3412}
 button:disabled{opacity:.5;cursor:not-allowed}
-input,select{border:1px solid var(--border);border-radius:10px;padding:.45rem .65rem;font-size:.88rem;min-width:0}
+input,select{border:1px solid var(--border);border-radius:10px;padding:.45rem .65rem;font-size:.88rem;min-width:0;background:var(--card);color:var(--text)}
 table{width:100%;border-collapse:collapse;font-size:.86rem}
 th,td{text-align:left;padding:.55rem .4rem;border-bottom:1px solid var(--border);vertical-align:top}
 th{color:var(--muted);font-weight:600}
@@ -1044,20 +1070,20 @@ th{color:var(--muted);font-weight:600}
 .tag.active{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
 .muted{color:var(--muted)}
 .err{color:var(--err)}
-.acc-toolbar{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin:.35rem 0 .7rem;padding:.55rem .65rem;background:linear-gradient(180deg,#f8fafc,#fff);border:1px solid var(--border);border-radius:12px}
+.acc-toolbar{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin:.35rem 0 .7rem;padding:.55rem .65rem;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:12px}
 .acc-table-wrap{overflow:auto;height:min(52vh,480px);max-height:min(52vh,480px);border:1px solid var(--border);border-radius:12px;background:var(--card,#fff)}
 table.acc{width:100%;border-collapse:separate;border-spacing:0;font-size:.86rem}
-table.acc thead th{position:sticky;top:0;z-index:1;background:#f8fafc;color:var(--muted);font-weight:700;font-size:.75rem;letter-spacing:.02em;text-align:left;padding:.65rem .55rem;border-bottom:1px solid var(--border);white-space:nowrap}
-table.acc tbody td{padding:.7rem .55rem;border-bottom:1px solid #eef2f7;vertical-align:top}
+table.acc thead th{position:sticky;top:0;z-index:1;background:var(--thead);color:var(--muted);font-weight:700;font-size:.75rem;letter-spacing:.02em;text-align:left;padding:.65rem .55rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.acc tbody td{padding:.7rem .55rem;border-bottom:1px solid var(--soft);vertical-align:top}
 table.acc tbody tr:last-child td{border-bottom:none}
-table.acc tbody tr:hover{background:#f8fafc}
+table.acc tbody tr:hover{background:var(--row-hover)}
 table.acc tbody tr.row-over{background:#fff7ed}
 table.acc tbody tr.row-due{background:#fef2f2}
 table.acc tbody tr.row-auto{background:#f0fdfa}
 .acc-name{font-weight:600;line-height:1.25}
 .acc-file{color:var(--muted);font-size:.72rem;margin-top:.15rem;word-break:break-all}
 .acc-meta{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem}
-.chip{display:inline-flex;align-items:center;gap:.2rem;padding:.08rem .4rem;border-radius:999px;font-size:.7rem;border:1px solid var(--border);background:#f8fafc;color:#475569;font-variant-numeric:tabular-nums}
+.chip{display:inline-flex;align-items:center;gap:.2rem;padding:.08rem .4rem;border-radius:999px;font-size:.7rem;border:1px solid var(--border);background:var(--chip);color:var(--muted);font-variant-numeric:tabular-nums}
 .chip.hot{background:#ecfeff;border-color:#a5f3fc;color:#0e7490}
 .chip.over{background:#fff7ed;border-color:#fdba74;color:#9a3412}
 .chip.due{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
@@ -1070,10 +1096,17 @@ table.acc tbody tr.row-auto{background:#f0fdfa}
 .stack{display:flex;flex-direction:column;gap:.2rem}
 .mono{font-variant-numeric:tabular-nums}
 .guide{display:none;background:#fffbeb;border:1px solid #fcd34d;color:#78350f;border-radius:10px;padding:.65rem .8rem;margin:.5rem 0;font-size:.85rem}
-code{background:#f1f5f9;padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
+code{background:var(--soft);padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
 </style></head><body><div class="wrap">
-<h1>xAI Quota Guard <span class="badge" id="enBadge">…</span> <span class="badge muted" id="verBadge">v0</span></h1>
-<div class="sub">仅 xAI：429 免费额度冷却 · 402 积分冷却不删 · 区域/模型不可用不删 · 真 403 端点拒绝/401 才删 · 用户手动禁用永不自动启用</div>
+<div class="topbar">
+  <div>
+    <h1>xAI Quota Guard <span class="badge" id="enBadge">…</span> <span class="badge muted" id="verBadge">v0</span></h1>
+    <div class="sub">仅 xAI：429 免费额度冷却 · 402 积分冷却不删 · 区域/模型不可用不删 · 真 403 端点拒绝/401 才删 · 用户手动禁用永不自动启用</div>
+  </div>
+  <div class="row">
+    <button type="button" class="theme-toggle" id="btnTheme" onclick="toggleTheme()" title="切换浅色/深色主题">主题</button>
+  </div>
+</div>
 <div class="grid">
   <div class="card">
     <div class="row" style="justify-content:space-between">
@@ -1108,6 +1141,16 @@ code{background:#f1f5f9;padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
           </div>
         </div>
       </div>
+    </div>
+    <div class="chart-box" id="usageChartBox">
+      <h3>额度/巡查速览</h3>
+      <div class="chart-bars" id="usageChart">
+        <div class="chart-col"><div class="chart-val" id="cPoolVal">0</div><div class="chart-bar" id="cPool" style="height:8%"></div><div class="chart-lbl">日池</div></div>
+        <div class="chart-col"><div class="chart-val" id="cTodayVal">0</div><div class="chart-bar warn" id="cToday" style="height:8%"></div><div class="chart-lbl">今日已用</div></div>
+        <div class="chart-col"><div class="chart-val" id="cAliveVal">0</div><div class="chart-bar ok" id="cAlive" style="height:8%"></div><div class="chart-lbl">巡查存活</div></div>
+        <div class="chart-col"><div class="chart-val" id="cDeadVal">0</div><div class="chart-bar err" id="cDead" style="height:8%"></div><div class="chart-lbl">删+冷却</div></div>
+      </div>
+      <div class="muted" style="margin-top:.45rem;font-size:.72rem" id="chartHint">柱高相对日池与本轮巡查计数归一化 · 非计费账单</div>
     </div>
     <div id="recoverTip" class="guide" style="display:none;margin-top:.75rem"></div>
   </div>
@@ -1175,7 +1218,7 @@ code{background:#f1f5f9;padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
       <span id="patrolStatus" class="muted" style="font-size:.82rem">空闲</span>
     </div>
     <div id="patrolProgress" style="margin-top:.6rem;display:none">
-      <div style="background:#e2e8f0;border-radius:6px;height:.5rem;overflow:hidden">
+      <div style="background:var(--soft);border-radius:6px;height:.5rem;overflow:hidden">
         <div id="patrolBar" style="background:var(--accent);height:100%;width:0%;transition:width .3s"></div>
       </div>
       <div id="patrolSummaryLine" class="row" style="margin-top:.4rem;gap:.55rem;font-size:.8rem;flex-wrap:wrap;align-items:center">
@@ -1285,8 +1328,59 @@ code{background:#f1f5f9;padding:.1rem .3rem;border-radius:4px;font-size:.82rem}
 <script>
 const API = "/v0/management/cpa-xai-quota-guard";
 const KEY_LS = "cpaXaiQgKey";
+const THEME_LS = "cpaXaiQgTheme";
 function mgmtKey(){ return localStorage.getItem(KEY_LS) || ""; }
 function setMgmtKey(v){ localStorage.setItem(KEY_LS, v || ""); }
+function preferredTheme(){
+  var t = localStorage.getItem(THEME_LS);
+  if(t==="light"||t==="dark") return t;
+  try{ if(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark"; }catch(e){}
+  return "light";
+}
+function applyTheme(t){
+  t = (t==="dark") ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", t);
+  try{ localStorage.setItem(THEME_LS, t); }catch(e){}
+  var b = document.getElementById("btnTheme");
+  if(b) b.textContent = (t==="dark") ? "浅色" : "深色";
+}
+function toggleTheme(){ applyTheme(document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark"); }
+function chartH(v, max){
+  max = Number(max)||0; v = Number(v)||0;
+  if(max<=0) return 8;
+  var pct = Math.round((v/max)*100);
+  if(pct<8 && v>0) pct=8;
+  if(pct>100) pct=100;
+  if(v<=0) pct=8;
+  return pct;
+}
+function paintUsageChart(d){
+  d = d || LAST_STATE || {};
+  var m = d.metrics || {};
+  var p = d.patrol || d.last_patrol || {};
+  var pool = Number(m.quota_total_est||0);
+  var today = Number(m.used_today_display != null ? m.used_today_display : (m.used_today||0));
+  var alive = Number(p.alive||0);
+  var deleted = Number(p.deleted||0);
+  var cooled = Number(p.cooldown||p.cooled||0);
+  var dead = deleted + cooled;
+  var patrolMax = Math.max(alive+dead, Number(p.probed||0), 1);
+  var poolMax = Math.max(pool, today, 1);
+  function setBar(id, valId, v, max, fmt){
+    var el=document.getElementById(id), vl=document.getElementById(valId);
+    if(el) el.style.height = chartH(v,max)+"%";
+    if(vl) vl.textContent = fmt ? fmt(v) : String(v);
+  }
+  setBar("cPool","cPoolVal", pool, poolMax, function(v){ return (typeof fmtToken==="function")?fmtToken(v):v; });
+  setBar("cToday","cTodayVal", today, poolMax, function(v){ return (typeof fmtToken==="function")?fmtToken(v):v; });
+  setBar("cAlive","cAliveVal", alive, patrolMax, null);
+  setBar("cDead","cDeadVal", dead, patrolMax, null);
+  var h=document.getElementById("chartHint");
+  if(h){
+    h.textContent = "日池/今日相对归一 · 巡查存活 vs 删+冷却 · probed="+(p.probed||0);
+  }
+}
+applyTheme(preferredTheme());
 function showKeyNeeded(){
   const b=document.getElementById("enBadge");
   if(b){ b.textContent="请配置 Management Key"; b.className="badge muted"; }
@@ -1724,6 +1818,8 @@ let ACC_SEARCH_TIMER = null;
 function onAccSearch(){
   if(ACC_SEARCH_TIMER) clearTimeout(ACC_SEARCH_TIMER);
   ACC_SEARCH_TIMER = setTimeout(function(){ ACC_PAGE = 1; renderAccountTable(); }, 200);
+  try{ paintUsageChart(d); }catch(e){}
+
 }
 function accountHealth(a, nowMs){
   if(a.health) return a.health;

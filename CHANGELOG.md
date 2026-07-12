@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- **主题**：浅色/深色切换（`data-theme` + localStorage；默认跟随系统）
+- **移动端**：窄屏统计卡单列/双列、工具栏与表格高度、内边距收紧
+- **统计图**：状态栏下方简易柱图（日池 / 今日已用 / 巡查存活 / 删+冷却）
+- CSS 变量统一卡片/表格/输入在深色下的对比度（吸收 grok-panel 主题思路，非整页照搬）
+- 版本号 → 0.3.0（`main.go` / `registry.json`）
+
 ## 0.2.23
 - **开源交付**：根目录 `LICENSE`（MIT）；README 协议徽章与「开源协议」章节；界面预览截图区（`docs/screenshots/`）
 - **CI**：正式启用多架构 workflow（linux/darwin/windows × amd64/arm64）+ tag 触发 Release zip
