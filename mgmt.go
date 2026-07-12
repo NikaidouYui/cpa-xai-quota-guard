@@ -180,7 +180,8 @@ func (m *mgmtAuth) List() ([]xaiquota.AuthFile, error) {
 	}
 	// Guard: do not replace a large known inventory with an empty successful response
 	// (auth-files partial/empty under load has been observed operationally).
-	if len(out) == 0 && len(staleSnap) > 50 && staleKey == cacheKey {
+	// But if cache is older than 2min, accept empty as real (all creds may be deleted).
+	if len(out) == 0 && len(staleSnap) > 50 && staleKey == cacheKey && !staleAt.IsZero() && time.Since(staleAt) < 2*time.Minute {
 		authListCacheMu.Lock()
 		authListLastErr = "empty auth-files response; kept sticky inventory"
 		authListLastStale = true
@@ -239,6 +240,7 @@ func (m *mgmtAuth) SetDisabled(authIndex string, disabled bool) (bool, error) {
 	if _, err := mgmtHTTP(http.MethodPatch, m.url+"/v0/management/auth-files/status", payload, m.key); err != nil {
 		return prev, err
 	}
+	invalidateAuthListCache()
 	return prev, nil
 }
 
@@ -262,7 +264,11 @@ func (m *mgmtAuth) Delete(authIndex string) error {
 		return fmt.Errorf("auth file not found for index %s", authIndex)
 	}
 	target := m.url + "/v0/management/auth-files?name=" + urlEncode(name)
-	return mgmtHTTPDelete(target, m.key)
+	err = mgmtHTTPDelete(target, m.key)
+	if err == nil {
+		invalidateAuthListCache()
+	}
+	return err
 }
 
 func mgmtHTTPDelete(target, key string) error {
