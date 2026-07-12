@@ -74,7 +74,7 @@ type authFileJSON struct {
 
 // PatrolSweep iterates all enabled xAI auth files, reads the token from disk,
 // probes the upstream directly, and deletes dead credentials.
-func (g *Guard) PatrolSweep() *PatrolStatus {
+func (g *Guard) PatrolSweep() PatrolStatus {
 	g.mu.Lock()
 	if g.patrol.running {
 		g.mu.Unlock()
@@ -406,7 +406,7 @@ func (g *Guard) PatrolStop() {
 }
 
 // PatrolRunOnce triggers a manual sweep if not already running.
-func (g *Guard) PatrolRunOnce() *PatrolStatus {
+func (g *Guard) PatrolRunOnce() PatrolStatus {
 	g.mu.Lock()
 	if g.patrol.running {
 		g.mu.Unlock()
