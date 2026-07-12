@@ -23,6 +23,11 @@ func configFields() []pluginapi.ConfigField {
 		{Name: "management_url", Type: pluginapi.ConfigFieldTypeString, Description: "CPA 管理 API 基址"},
 		{Name: "management_key", Type: pluginapi.ConfigFieldTypeString, Description: "CPA X-Management-Key（敏感，不回显）"},
 		{Name: "state_path", Type: pluginapi.ConfigFieldTypeString, Description: "状态持久化 JSON 路径"},
+		{Name: "min_reset_seconds", Type: pluginapi.ConfigFieldTypeNumber, Description: "最小冷却等待(秒)，0=不限制"},
+		{Name: "include_unobserved_quota_est", Type: pluginapi.ConfigFieldTypeBoolean, Description: "总额度是否计入未观测账号×默认1M（默认开；关则仅已知 rolling limit）"},
+		{Name: "cpamp_url", Type: pluginapi.ConfigFieldTypeString, Description: "CPAMP 基址(可选，用于回补/深链)"},
+		{Name: "cpamp_admin_key", Type: pluginapi.ConfigFieldTypeString, Description: "CPAMP Panel Admin Key(敏感)"},
+		{Name: "webhook_url", Type: pluginapi.ConfigFieldTypeString, Description: "冷却/删除事件 Webhook URL(可选)"},
 	}
 }
 
@@ -94,6 +99,21 @@ func applyConfigMap(cfg *xaiquota.Config, m map[string]any) {
 	}
 	if v, ok := asString(m["state_path"]); ok && strings.TrimSpace(v) != "" {
 		cfg.StatePath = strings.TrimSpace(v)
+	}
+	if v, ok := asFloat(m["min_reset_seconds"]); ok && v >= 0 {
+		cfg.MinResetSeconds = v
+	}
+	if v, ok := asBool(m["include_unobserved_quota_est"]); ok {
+		cfg.IncludeUnobservedQuotaEst = v
+	}
+	if v, ok := asString(m["cpamp_url"]); ok {
+		cfg.CPAMPURL = strings.TrimSpace(v)
+	}
+	if v, ok := asString(m["cpamp_admin_key"]); ok {
+		cfg.CPAMPAdminKey = strings.TrimSpace(v)
+	}
+	if v, ok := asString(m["webhook_url"]); ok {
+		cfg.WebhookURL = strings.TrimSpace(v)
 	}
 }
 

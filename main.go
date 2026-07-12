@@ -58,7 +58,6 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"unsafe"
 
@@ -69,7 +68,7 @@ import (
 
 const (
 	pluginID   = "cpa-xai-quota-guard"
-	pluginVer  = "0.1.0"
+	pluginVer  = "0.1.27"
 	pluginAuth = "@mortal"
 	pluginRepo = "https://github.com/mortal/cpa-xai-quota-guard"
 	pluginLogo = ""
@@ -233,6 +232,11 @@ func (dynamicAuth) SetDisabled(authIndex string, disabled bool) (bool, error) {
 	return newMgmtAuth(cfg).SetDisabled(authIndex, disabled)
 }
 
+func (dynamicAuth) Delete(authIndex string) error {
+	cfg := guard().Config()
+	return newMgmtAuth(cfg).Delete(authIndex)
+}
+
 func handleMethod(method string, request []byte) ([]byte, error) {
 	switch method {
 	case pluginabi.MethodPluginRegister, pluginabi.MethodPluginReconfigure:
@@ -288,13 +292,44 @@ func handleUsageEvent(request []byte) ([]byte, error) {
 	if len(request) == 0 {
 		return okEnvelopeJSON("{}")
 	}
+	// Prefer typed decode first (exported field names from host json.Marshal).
 	var record pluginapi.UsageRecord
-	if err := json.Unmarshal(request, &record); err != nil {
-		return errorEnvelope("decode_usage", err.Error()), nil
+	if err := json.Unmarshal(request, &record); err == nil {
+		ev := usageEventFromRecord(record)
+		// Fallback fill from raw map if typed detail is empty but raw has tokens.
+		if ev.TotalTokens <= 0 && (ev.InputTokens+ev.OutputTokens+ev.ReasoningTokens) <= 0 {
+			if rawEv, ok := usageEventFromRaw(request); ok {
+				if rawEv.TotalTokens > 0 || rawEv.InputTokens > 0 || rawEv.OutputTokens > 0 {
+					ev.InputTokens = rawEv.InputTokens
+					ev.OutputTokens = rawEv.OutputTokens
+					ev.ReasoningTokens = rawEv.ReasoningTokens
+					ev.TotalTokens = rawEv.TotalTokens
+				}
+				if ev.Body == "" && rawEv.Body != "" {
+					ev.Body = rawEv.Body
+					ev.StatusCode = rawEv.StatusCode
+					ev.Failed = rawEv.Failed
+				}
+				if ev.AuthIndex == "" {
+					ev.AuthIndex = rawEv.AuthIndex
+				}
+				if ev.Provider == "" {
+					ev.Provider = rawEv.Provider
+				}
+				if ev.AuthType == "" {
+					ev.AuthType = rawEv.AuthType
+				}
+			}
+		}
+		guard().HandleUsage(ev)
+		return okEnvelopeJSON("{}")
 	}
-	ev := usageEventFromRecord(record)
-	guard().HandleUsage(ev)
-	return okEnvelopeJSON("{}")
+	// Typed decode failed: raw path.
+	if ev, ok := usageEventFromRaw(request); ok {
+		guard().HandleUsage(ev)
+		return okEnvelopeJSON("{}")
+	}
+	return errorEnvelope("decode_usage", "invalid usage payload"), nil
 }
 
 func usageEventFromRecord(r pluginapi.UsageRecord) xaiquota.UsageEvent {
@@ -308,6 +343,10 @@ func usageEventFromRecord(r pluginapi.UsageRecord) xaiquota.UsageEvent {
 	if r.ResponseHeaders != nil {
 		headers = map[string][]string(r.ResponseHeaders)
 	}
+	total := r.Detail.TotalTokens
+	if total <= 0 {
+		total = r.Detail.InputTokens + r.Detail.OutputTokens + r.Detail.ReasoningTokens
+	}
 	return xaiquota.UsageEvent{
 		AuthIndex:       r.AuthIndex,
 		Provider:        r.Provider,
@@ -317,90 +356,136 @@ func usageEventFromRecord(r pluginapi.UsageRecord) xaiquota.UsageEvent {
 		StatusCode:      status,
 		Body:            body,
 		ResponseHeaders: headers,
+		InputTokens:     r.Detail.InputTokens,
+		OutputTokens:    r.Detail.OutputTokens,
+		ReasoningTokens: r.Detail.ReasoningTokens,
+		TotalTokens:     total,
 	}
 }
 
-type managementRegistration struct {
-	Routes    []managementRoute    `json:"routes,omitempty"`
-	Resources []managementResource `json:"resources,omitempty"`
-}
-
-type managementRoute struct {
-	Method      string `json:"Method"`
-	Path        string `json:"Path"`
-	Description string `json:"Description"`
-}
-
-type managementResource struct {
-	Path        string `json:"Path"`
-	Menu        string `json:"Menu"`
-	Description string `json:"Description"`
-}
-
-func buildManagementRegistration() managementRegistration {
-	return managementRegistration{
-		Resources: []managementResource{
-			{
-				Path:        "/index.html",
-				Menu:        "xAI Quota Guard",
-				Description: "xAI 短时额度自动禁用与到期恢复",
-			},
-		},
-		Routes: []managementRoute{
-			{Method: "GET", Path: "/cpa-xai-quota-guard/state", Description: "账号状态 JSON"},
-			{Method: "GET", Path: "/cpa-xai-quota-guard/config", Description: "当前配置（脱敏）"},
-			{Method: "POST", Path: "/cpa-xai-quota-guard/toggle", Description: "开关 enabled"},
-			{Method: "POST", Path: "/cpa-xai-quota-guard/run", Description: "手动触发恢复扫描"},
-		},
+func usageEventFromRaw(request []byte) (xaiquota.UsageEvent, bool) {
+	var raw map[string]any
+	if err := json.Unmarshal(request, &raw); err != nil || raw == nil {
+		return xaiquota.UsageEvent{}, false
 	}
-}
-
-func handleManagement(request []byte) ([]byte, error) {
-	var req struct {
-		Method string          `json:"method"`
-		Path   string          `json:"path"`
-		Body   json.RawMessage `json:"body"`
-	}
-	if err := json.Unmarshal(request, &req); err != nil {
-		return errorEnvelope("decode_management", err.Error()), nil
-	}
-	method := req.Method
-	if method == "" {
-		method = http.MethodGet
-	}
-	path := req.Path
-	switch {
-	case method == http.MethodGet && path == "/cpa-xai-quota-guard/state":
-		return okEnvelope(map[string]any{
-			"accounts": guard().Snapshot(),
-		})
-	case method == http.MethodGet && path == "/cpa-xai-quota-guard/config":
-		cfg := guard().Config()
-		return okEnvelope(map[string]any{
-			"enabled":           cfg.Enabled,
-			"tick_seconds":      cfg.TickSeconds,
-			"max_reset_seconds": cfg.MaxResetSeconds,
-			"management_url":    cfg.ManagementURL,
-			"management_key_set": cfg.ManagementKey != "",
-			"state_path":        cfg.StatePath,
-		})
-	case method == http.MethodPost && path == "/cpa-xai-quota-guard/toggle":
-		var body struct {
-			Enabled *bool `json:"enabled"`
+	getS := func(keys ...string) string {
+		for _, k := range keys {
+			if v, ok := raw[k]; ok {
+				switch t := v.(type) {
+				case string:
+					if t != "" {
+						return t
+					}
+				}
+			}
 		}
-		_ = json.Unmarshal(req.Body, &body)
-		cfg := guard().Config()
-		if body.Enabled != nil {
-			cfg.Enabled = *body.Enabled
-		} else {
-			cfg.Enabled = !cfg.Enabled
-		}
-		guard().ApplyConfig(cfg)
-		return okEnvelope(map[string]any{"enabled": cfg.Enabled})
-	case method == http.MethodPost && path == "/cpa-xai-quota-guard/run":
-		guard().Tick()
-		return okEnvelopeJSON(`{"ok":true}`)
-	default:
-		return errorEnvelope("not_found", "unknown management path: "+path), nil
+		return ""
 	}
+	getB := func(keys ...string) bool {
+		for _, k := range keys {
+			if v, ok := raw[k]; ok {
+				switch t := v.(type) {
+				case bool:
+					return t
+				case float64:
+					return t != 0
+				}
+			}
+		}
+		return false
+	}
+	getI := func(m map[string]any, keys ...string) int64 {
+		if m == nil {
+			return 0
+		}
+		for _, k := range keys {
+			if v, ok := m[k]; ok {
+				switch t := v.(type) {
+				case float64:
+					return int64(t)
+				case int64:
+					return t
+				case json.Number:
+					n, _ := t.Int64()
+					return n
+				case string:
+					var n int64
+					fmt.Sscan(t, &n)
+					return n
+				}
+			}
+		}
+		return 0
+	}
+	failed := getB("Failed", "failed")
+	status := 0
+	body := ""
+	// Failure may be nested object
+	if f, ok := raw["Failure"].(map[string]any); ok {
+		status = int(getI(f, "StatusCode", "status_code", "statusCode"))
+		if s, ok := f["Body"].(string); ok {
+			body = s
+		} else if s, ok := f["body"].(string); ok {
+			body = s
+		}
+	}
+	if f, ok := raw["failure"].(map[string]any); ok {
+		if status == 0 {
+			status = int(getI(f, "StatusCode", "status_code", "statusCode"))
+		}
+		if body == "" {
+			if s, ok := f["Body"].(string); ok {
+				body = s
+			} else if s, ok := f["body"].(string); ok {
+				body = s
+			}
+		}
+	}
+	detail := map[string]any{}
+	if d, ok := raw["Detail"].(map[string]any); ok {
+		detail = d
+	} else if d, ok := raw["detail"].(map[string]any); ok {
+		detail = d
+	}
+	inTok := getI(detail, "InputTokens", "input_tokens", "inputTokens", "PromptTokens", "prompt_tokens")
+	outTok := getI(detail, "OutputTokens", "output_tokens", "outputTokens", "CompletionTokens", "completion_tokens")
+	reaTok := getI(detail, "ReasoningTokens", "reasoning_tokens", "reasoningTokens")
+	total := getI(detail, "TotalTokens", "total_tokens", "totalTokens")
+	if total <= 0 {
+		total = inTok + outTok + reaTok
+	}
+	// top-level token fallbacks
+	if total <= 0 {
+		total = getI(raw, "TotalTokens", "total_tokens", "totalTokens")
+	}
+	headers := map[string][]string{}
+	if h, ok := raw["ResponseHeaders"].(map[string]any); ok {
+		for k, v := range h {
+			switch t := v.(type) {
+			case []any:
+				arr := make([]string, 0, len(t))
+				for _, x := range t {
+					arr = append(arr, fmt.Sprint(x))
+				}
+				headers[k] = arr
+			case []string:
+				headers[k] = t
+			case string:
+				headers[k] = []string{t}
+			}
+		}
+	}
+	return xaiquota.UsageEvent{
+		AuthIndex:       getS("AuthIndex", "auth_index", "authIndex"),
+		Provider:        getS("Provider", "provider"),
+		AuthType:        getS("AuthType", "auth_type", "authType"),
+		Failed:          failed || status >= 400 || body != "",
+		StatusCode:      status,
+		Body:            body,
+		ResponseHeaders: headers,
+		InputTokens:     inTok,
+		OutputTokens:    outTok,
+		ReasoningTokens: reaTok,
+		TotalTokens:     total,
+	}, true
 }

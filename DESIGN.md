@@ -1,40 +1,40 @@
 # cpa-xai-quota-guard 设计文档
 
-> xAI 专用短时额度/限流管控插件（CLIProxyAPI native Go）
+> xAI 专用额度/死号管控插件（CLIProxyAPI native Go）  
+> 当前实现版本：**0.1.27**（以 `main.go` 中 `pluginVer` 为准）
 
 ## 1. 目标
 
-仅针对 **xAI** 登录凭证：当上游返回明确的「短时调用额度/限流耗尽」错误时，临时禁用该凭证；解析重置时间，到期后仅恢复本插件自动禁用的账号。用户手动禁用永不自动启用。
+仅针对 **xAI** 登录凭证：
+
+1. 明确的 **短时免费额度用尽（rolling 24h）** → 临时禁用，到期自动恢复  
+2. 明确的 **死号**（权限拒绝 / 凭证失效 / 订阅积分耗尽）→ 删除凭证  
+3. 用户手动禁用永不自动启用；状态标签持久化  
 
 ## 2. 硬性约束
 
-1. 只监控 xAI（`provider`/`auth_type` = `xai`），其它 provider 全部忽略。
-2. 仅捕获明确短时额度耗尽/限流类报错；网络/鉴权/封禁/月度额度/接口其它错误全部跳过。
-3. 从报错 body/headers 解析冷却/重置时间，计算等待时长。
-4. 合法报错 → 临时禁用对应登录凭证文件。
-5. 重置时间到达 → 自动启用。
-6. 仅恢复本插件自动禁用的文件。
-7. 用户手动禁用永远不会被自动启用。
-8. 状态标签：`plugin_auto` / `user_manual`，持久化。
-9. 时间解析失败 → 不禁用，记日志，静默跳过。
+1. 只监控 xAI（`provider`/`auth_type` 规范化后为 `xai`），其它 provider 全部忽略。  
+2. 仅捕获白名单错误；网络/`context canceled`/鉴权以外业务码/封禁模糊错误全部跳过。  
+3. 429 free-usage：解析或默认滚动 24h 冷却；解析失败 → **不禁用**。  
+4. 合法 429 → 临时禁用对应登录文件（`plugin_auto`）。  
+5. 重置时间到达 → 自动启用。  
+6. 仅恢复本插件自动禁用的文件。  
+7. 用户手动禁用永远不会被自动启用。  
+8. 状态标签：`plugin_auto` / `user_manual`，持久化到 `state_path`。  
+9. 401/402/403 死号路径 → **DELETE**，不进冷却队列。  
 
-## 3. 与 CPAMP 的对齐（模型，不是 Codex 规则）
+## 3. 与 CPAMP 的对齐
 
-复用 CPAMP `RateLimitAutoDisableWorker` 的所有权模型，**不复用 Codex 匹配字段**：
+复用 CPAMP 冷却的**所有权模型**，**不复用 Codex 匹配字段**：
 
 | 概念 | 取值 |
 |------|------|
 | owner | `cpa_xai_quota_plugin` |
 | pre_disabled | 禁用前读到的 `disabled` |
-| recover_at | 解析出的未来重置时间 |
-| 恢复条件 | owner 匹配 + 非 pre_disabled + 到期 |
+| recover_at | 解析或默认的未来重置时间 |
+| 恢复条件 | owner 匹配 + 非 pre_disabled + 到期 + `plugin_auto` |
 
-禁用前：
-
-1. 读 management `auth-files` 当前 `disabled`。
-2. 若已禁用且本插件无 active cooldown → 记为 `user_manual`，跳过。
-3. 若本插件已有 cooldown → 可延长 `recover_at`。
-4. 否则禁用并写 `plugin_auto`。
+可选：`cpamp_url` + `cpamp_admin_key` 用于今日用量回补地板（不替代 `usage.handle`）。
 
 ## 4. xAI 真实机制（不照搬 Codex）
 
@@ -43,112 +43,193 @@
 | 维度 | Codex | xAI（本插件） |
 |------|-------|----------------|
 | provider | codex | **仅 xai** |
-| 主信号 | `usage_limit_reached` / `x-codex-*` 窗口 | **HTTP 429 + rate_limit 语义** |
-| 重置 | `resets_at` / Codex header windows | **Retry-After / x-ratelimit-reset* / body retry_after** |
-| 月度/账户额度 | 部分走 usage_limit | **通常非本插件处理**（402/403/insufficient_quota 等跳过） |
+| 主冷却信号 | `usage_limit_reached` / `x-codex-*` | **429 + free-usage-exhausted（rolling 24h）** |
+| 死号 | 视实现 | **403 / 401 / 402 明确码 → DELETE** |
+| 月度/账户额度 | 部分 usage_limit | **402 spending-limit 删除；不冷却** |
 
-### 4.2 合法匹配条件（全部满足）
+### 4.2 冷却匹配（429 short-window）
 
-1. `Failed == true`
-2. Provider 规范化后为 `xai`（`auth_type=xai` 可作为兜底）
-3. `StatusCode == 429`
-4. body 或 headers 具备 **明确短时限流信号**（见下）
-5. 成功解析出 **未来** 的 `recover_at`
-6. `recover_at - now <= max_reset_seconds`（默认 86400）
+`MatchShortWindowQuota` 全部满足才禁用：
 
-任一不满足 → 跳过，不禁用。
+1. `Failed == true`  
+2. Provider 为 xAI  
+3. `StatusCode == 429`  
+4. 明确短时/免费额度信号（见下）  
+5. 成功得到 **未来** `recover_at`（含 rolling 24h 默认）  
+6. `recover_at - now <= max_reset_seconds`  
 
-### 4.3 短时限流信号（xAI / OpenAI-compatible）
+### 4.3 真实样例（生产）
 
-xAI Responses API 走 OpenAI 兼容错误形态。以下任一成立即可（在 429 前提下）：
+**冷却 — HTTP 429：**
 
-**Body：**
+```json
+{
+  "code": "subscription:free-usage-exhausted",
+  "error": "You've used all the included free usage for model grok-4.5-build-free for now. Usage resets over a rolling 24-hour window — tokens (actual/limit): 1091108/1000000."
+}
+```
 
-- `error.code` ∈ {`rate_limit_exceeded`, `rate_limit`, `too_many_requests`}
-- `error.type` ∈ {`tokens`, `requests`, `rate_limit_error`, `rate_limit_exceeded`}
-- message 明确含：`rate limit` / `too many requests` / `tokens per minute` / `requests per minute` / `TPM` / `RPM` / `rate_limit_exceeded`
+- 无 `Retry-After` 时：按 **rolling 24h** 默认 recover（受 `max_reset_seconds` / `min_reset_seconds` 约束）  
+- 同时解析 `actual/limit` 写入滚动池快照  
 
-**Headers（辅助确认 + 取重置时间）：**
+**删除 — HTTP 403：**
 
-- `Retry-After`（秒或 HTTP-date）
-- `x-ratelimit-remaining-requests` / `x-ratelimit-remaining-tokens` 为 `0`
-- `x-ratelimit-reset-requests` / `x-ratelimit-reset-tokens` / `x-ratelimit-reset` 存在
+```json
+{"code":"permission-denied","error":"Access to the chat endpoint is denied. ..."}
+```
 
-### 4.4 明确排除（永不处理）
+**删除 — HTTP 401：**
 
-- 状态码：0/401/402/403/5xx/网络类
-- body 含：`unauthorized` / `invalid_api_key` / `invalid_api_key` / `permission` / `banned` / `suspended` / `insufficient_quota` / `billing` / `payment_required` / `monthly` credit 耗尽等
-- 纯泛 429 且 **既无限流信号也无任何可解析重置时间** → 跳过
-- Codex 专用字段 **不得** 作为 xAI 主信号：`usage_limit_reached`、`x-codex-*` 窗口
+```text
+Invalid or expired credentials (auth_kind=bearer, ... reason=no auth context)
+```
+
+**删除 — HTTP 402：**
+
+```json
+{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription. ..."}
+```
+
+**忽略 — HTTP 200 流式取消：**
+
+```text
+context canceled  + Content-Type: text/event-stream
+```
+
+客户端/链路取消，额度头可能仍正常；**不冷却、不删除**。
+
+### 4.4 信号与排除
+
+**冷却信号（429 前提下）：**
+
+- `subscription:free-usage-exhausted` / free usage / free-usage  
+- 兼容 OpenAI-like：`rate_limit_exceeded` / TPM·RPM 文案 + 可解析重置  
+- Headers：`Retry-After`、`x-ratelimit-reset*`、`X-Should-Retry` 辅助  
+
+**删除信号：**
+
+- 403 + `permission-denied`  
+- 401 + invalid/expired credentials / no auth context / invalid_grant revoked  
+- 402 + spending-limit / run out of credits / personal-team-blocked  
+
+**永不处理：**
+
+- `context canceled`、纯网络错误、5xx 模糊失败  
+- 非 xAI provider  
+- 纯泛 429 且无线索且无法默认 recover  
+- Codex 专用字段不得作为主信号  
 
 ### 4.5 重置时间解析优先级
 
-1. Header `Retry-After`（相对秒或 HTTP-date）
-2. Header `x-ratelimit-reset-requests` / `x-ratelimit-reset-tokens` / `x-ratelimit-reset`  
-   - 数值 < 1e12 视为 Unix 秒；>= 1e12 视为毫秒；若为“剩余秒”小整数（<= max_reset）也可作相对秒
-3. Body 字段：`retry_after` / `retry_after_ms` / `reset_at` / `resets_at` / `resetsAt` / `resets_in_seconds`
-4. 嵌套 `error.*` 同名字段
+1. Header `Retry-After`  
+2. Header `x-ratelimit-reset*`  
+3. Body `retry_after` / `reset_at` / `resets_at` 等  
+4. free-usage **rolling 24-hour window** → 默认 now+24h（截断到 max）  
 
-解析失败或非未来 → **不禁用**，日志 + 静默跳过。
+解析失败且无默认路径 → **不禁用**。
 
 ## 5. 状态机
 
 ```
 active
-  └─ 合法 xAI 短时限流 → auto_disabled (disable_source=plugin_auto)
+  └─ 429 free-usage 合法 → auto_disabled (disable_source=plugin_auto)
 auto_disabled
   └─ now >= recover_at → 启用 → active（仅 plugin_auto）
 user_manual_disabled
   └─ 永不自动启用
+dead credential (401/402/403 白名单)
+  └─ DELETE auth-files + delete_history
 ```
 
 ## 6. 持久化
 
 默认 `data/cpa-xai-quota-guard-state.json`：
 
+- `accounts[auth_index]`：状态机字段 + reason/signal/recover_at  
+- usage/metrics：今日/累计 token、请求计数、滚动 actual/limit 快照  
+- `delete_history`：最近删除记录（UI 展示）  
+
+## 7. 集成
+
+| 钩子 | 用途 |
+|------|------|
+| `usage.handle` | 成功计 token；失败匹配冷却/删除 |
+| ticker | 扫描 due cooldown 并 enable |
+| management List/PATCH/DELETE | inventory 与账号操作 |
+| management 路由 | state/config/toggle/run/inject/export/backfill/health |
+| resource `index.html` | 内嵌管理 UI |
+
+禁用/启用：`PATCH /v0/management/auth-files/status`  
+删除：`DELETE /v0/management/auth-files?name=...`
+
+## 8. 管理 state 性能设计
+
+### 8.1 问题
+
+全量 xAI auth-files 可达 **5k–6k**。对每账号反复读 usage 文件或序列化全表会导致管理 iframe **卡在加载中**。
+
+### 8.2 策略（0.1.24–0.1.27）
+
+1. **`UsageAndQuotaMaps()`**：单次读 usage store  
+2. **`view=focus`（默认）**：只返回可操作/今日热账号；inventory 全量只计数  
+3. **`focusHotCap=80`**：今日 hot 行硬截断  
+4. **auth-files List 缓存**（TTL ~12s）  
+5. **失败 sticky**：List 失败或空响应时回落上次成功 inventory（最长 ~10min），并暴露 `inventory.stale`  
+6. **UI `LAST_GOOD_XAI`**：状态栏凭证数不因瞬时 0 覆盖上次非零  
+
+### 8.3 state 关键字段
+
 ```json
 {
-  "version": 1,
-  "updated_at_ms": 0,
-  "accounts": {
-    "<auth_index>": {
-      "auth_index": "",
-      "file_name": "",
-      "provider": "xai",
-      "account": "",
-      "disable_source": "none|plugin_auto|user_manual",
-      "state": "active|auto_disabled|user_manual_disabled",
-      "recover_at_ms": 0,
-      "disabled_at_ms": 0,
-      "pre_disabled": false,
-      "owner": "cpa_xai_quota_plugin",
-      "reason": "",
-      "last_event_hash": ""
-    }
+  "version": "0.1.27",
+  "view": "focus",
+  "accounts": [],
+  "summary": {
+    "returned": 0,
+    "tracked": 0,
+    "auto_disabled": 0,
+    "hot_total": 0,
+    "hot_shown": 0,
+    "hot_hidden": 0,
+    "focus_hot_cap": 80
+  },
+  "metrics": { "xai_total": 0, "used_today": 0, "quota_total_est": 0 },
+  "inventory": {
+    "ok": true,
+    "stale": false,
+    "error": "",
+    "age_ms": 0,
+    "xai_total": 0
   }
 }
 ```
 
-## 7. 集成
+## 9. 配置
 
-- `usage.handle`：实时失败事件
-- ticker：扫描 due cooldown 并启用（无需 Codex 式 probe；到期直接 enable）
-- 禁用/启用：`PATCH /v0/management/auth-files/status`
-- 可选 management 路由：state / logs / toggle / run
+见 README 配置表。敏感字段：`management_key`、`cpamp_admin_key`。
 
-## 8. 配置
+## 10. 假设与局限
 
-| 字段 | 默认 | 说明 |
-|------|------|------|
-| enabled | false | 总开关 |
-| tick_seconds | 15 | 恢复扫描周期 |
-| management_url | "" | CPA 管理基址 |
-| management_key | "" | X-Management-Key |
-| state_path | data/cpa-xai-quota-guard-state.json | 状态文件 |
-| max_reset_seconds | 86400 | 超过则不禁用 |
+1. free-usage 滚动窗口以 xAI 文案与生产样例为准；无 `Retry-After` 时用 24h 默认。  
+2. 402 与 429 free-usage **不得混淆**：402 删除，429 冷却。  
+3. 凭证数依赖 management `auth-files`；主机繁忙时可能瞬时失败 → sticky 掩盖，非实时强一致。  
+4. `include_unobserved_quota_est=true` 时总额度为 **估**，未观测账号按默认 1M 计。  
+5. 今日已用依赖 CPA 是否在 usage 事件中带 token Detail；缺 Detail 时可能偏低（可用 CPAMP 回补地板）。  
+6. 失败但从未成功的账号默认保留，不自动清池。  
 
-## 9. 假设与局限
+## 11. 演进记录（摘要）
 
-- 本地未抓到完整官方 429 样例全文；按 xAI OpenAI-compatible 错误 + 常见 rate-limit 头实现。
-- 若未来 xAI 改变错误 schema，优先扩 `match.go` 白名单字段，不改所有权模型。
-- management_url/key 未配置时只记日志，不操作账号。
+| 日期/版本 | 变更 |
+|-----------|------|
+| 初版 | 通用 429 rate-limit + 所有权模型 |
+| 2026-07-11 | 生产 429 free-usage / 403 DELETE；ManagementResponse UI |
+| 0.1.22 | 401 invalid credentials DELETE |
+| 0.1.23 | 402 spending-limit DELETE |
+| 0.1.24–0.1.26 | focus 视图与 UI 性能 |
+| **0.1.27** | inventory sticky，凭证数不闪 0 |
+
+## 12. 安全
+
+- 仓库与 PR 禁止真实 key/token/Cookie  
+- 探针脚本若读取主机 `config.yaml` secret，仅限私有环境，**不得提交**  
+- commit 前扫描 staged diff  

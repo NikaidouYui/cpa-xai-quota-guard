@@ -38,6 +38,16 @@ type AccountRecord struct {
 	UpdatedAtMS   int64  `json:"updated_at_ms,omitempty"`
 }
 
+// DeleteEvent records a plugin-side permission-denied deletion.
+type DeleteEvent struct {
+	AuthIndex   string `json:"auth_index"`
+	FileName    string `json:"file_name,omitempty"`
+	Account     string `json:"account,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	DeletedAtMS int64  `json:"deleted_at_ms"`
+}
+
 // Store is a JSON-backed durable state store.
 type Store struct {
 	mu       sync.Mutex
@@ -45,6 +55,8 @@ type Store struct {
 	Version  int                      `json:"version"`
 	Updated  int64                    `json:"updated_at_ms"`
 	Accounts map[string]*AccountRecord `json:"accounts"`
+	Usage         *UsageStats   `json:"usage,omitempty"`
+	DeleteHistory []DeleteEvent `json:"delete_history,omitempty"`
 }
 
 // NewStore loads existing state or creates an empty one.
@@ -168,6 +180,42 @@ func (s *Store) DueAutoDisabled(now time.Time) []AccountRecord {
 			continue
 		}
 		out = append(out, *rec)
+	}
+	return out
+}
+
+
+func (s *Store) AppendDelete(ev DeleteEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ev.DeletedAtMS == 0 {
+		ev.DeletedAtMS = time.Now().UnixMilli()
+	}
+	s.DeleteHistory = append(s.DeleteHistory, ev)
+	// keep last 100
+	if len(s.DeleteHistory) > 100 {
+		s.DeleteHistory = s.DeleteHistory[len(s.DeleteHistory)-100:]
+	}
+	s.Updated = time.Now().UnixMilli()
+	return s.persistLocked()
+}
+
+func (s *Store) ListDeletes(limit int) []DeleteEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 || limit > len(s.DeleteHistory) {
+		limit = len(s.DeleteHistory)
+	}
+	if limit == 0 {
+		return nil
+	}
+	src := s.DeleteHistory
+	start := len(src) - limit
+	out := make([]DeleteEvent, limit)
+	copy(out, src[start:])
+	// reverse newest first
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
 	}
 	return out
 }

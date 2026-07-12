@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mortal/cpa-xai-quota-guard/internal/xaiquota"
@@ -39,20 +40,126 @@ type mgmtAuthEntry struct {
 	Account   string `json:"account"`
 	Email     string `json:"email"`
 	Disabled  bool   `json:"disabled"`
+	Success   int64  `json:"success"`
+	Failed    int64  `json:"failed"`
+}
+
+// Short-lived cache so state/health/tick do not re-pull 5k+ auth-files every request.
+// On fetch failure, return last good inventory (sticky) so UI never flashes xai_total=0.
+var (
+	authListCacheMu    sync.Mutex
+	authListCacheAt    time.Time
+	authListCacheKey   string
+	authListCacheData  []xaiquota.AuthFile
+	authListLastErr    string
+	authListLastStale  bool
+	authListLastXAI    int
+	authListLastEn     int
+	authListLastDis    int
+)
+
+const authListCacheTTL = 12 * time.Second
+const authListStaleMax = 10 * time.Minute
+
+type authListMeta struct {
+	OK        bool   `json:"ok"`
+	Stale     bool   `json:"stale"`
+	Error     string `json:"error,omitempty"`
+	CachedAt  int64  `json:"cached_at_ms,omitempty"`
+	AgeMS     int64  `json:"age_ms,omitempty"`
+	XAITotal  int    `json:"xai_total"`
+	XAIEnabled int   `json:"xai_enabled"`
+	XAIDisabled int  `json:"xai_disabled"`
+}
+
+func authListInventoryMeta() authListMeta {
+	authListCacheMu.Lock()
+	defer authListCacheMu.Unlock()
+	meta := authListMeta{
+		OK:          authListLastErr == "" && len(authListCacheData) > 0,
+		Stale:       authListLastStale,
+		Error:       authListLastErr,
+		XAITotal:    authListLastXAI,
+		XAIEnabled:  authListLastEn,
+		XAIDisabled: authListLastDis,
+	}
+	if !authListCacheAt.IsZero() {
+		meta.CachedAt = authListCacheAt.UnixMilli()
+		meta.AgeMS = time.Since(authListCacheAt).Milliseconds()
+	}
+	return meta
+}
+
+func recountXAI(files []xaiquota.AuthFile) (total, en, dis int) {
+	for _, f := range files {
+		if !xaiquota.IsXAIProvider(f.Provider, "") {
+			continue
+		}
+		total++
+		if f.Disabled {
+			dis++
+		} else {
+			en++
+		}
+	}
+	return total, en, dis
+}
+
+func copyAuthFiles(in []xaiquota.AuthFile) []xaiquota.AuthFile {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]xaiquota.AuthFile, len(in))
+	copy(out, in)
+	return out
 }
 
 func (m *mgmtAuth) List() ([]xaiquota.AuthFile, error) {
 	if m == nil || m.url == "" || m.key == "" {
 		return nil, fmt.Errorf("management not configured")
 	}
+	cacheKey := m.url + "|" + m.key
+	authListCacheMu.Lock()
+	if len(authListCacheData) > 0 && authListCacheKey == cacheKey && time.Since(authListCacheAt) < authListCacheTTL {
+		out := copyAuthFiles(authListCacheData)
+		authListLastStale = false
+		authListLastErr = ""
+		authListCacheMu.Unlock()
+		return out, nil
+	}
+	// keep a sticky snapshot for failure fallback (may be older than TTL)
+	staleSnap := copyAuthFiles(authListCacheData)
+	staleKey := authListCacheKey
+	staleAt := authListCacheAt
+	authListCacheMu.Unlock()
+
 	body, err := mgmtHTTP(http.MethodGet, m.url+"/v0/management/auth-files", nil, m.key)
 	if err != nil {
+		// sticky fallback: never force zero inventory into UI/metrics on transient errors
+		if len(staleSnap) > 0 && staleKey == cacheKey && !staleAt.IsZero() && time.Since(staleAt) < authListStaleMax {
+			authListCacheMu.Lock()
+			authListLastErr = err.Error()
+			authListLastStale = true
+			authListCacheMu.Unlock()
+			return staleSnap, nil
+		}
+		authListCacheMu.Lock()
+		authListLastErr = err.Error()
+		authListLastStale = true
+		authListCacheMu.Unlock()
 		return nil, err
 	}
 	var resp struct {
 		Files []mgmtAuthEntry `json:"files"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if len(staleSnap) > 0 && staleKey == cacheKey && !staleAt.IsZero() && time.Since(staleAt) < authListStaleMax {
+			authListCacheMu.Lock()
+			authListLastErr = "decode: " + err.Error()
+			authListLastStale = true
+			authListCacheMu.Unlock()
+			return staleSnap, nil
+		}
 		return nil, fmt.Errorf("decode auth-files: %w", err)
 	}
 	out := make([]xaiquota.AuthFile, 0, len(resp.Files))
@@ -67,9 +174,40 @@ func (m *mgmtAuth) List() ([]xaiquota.AuthFile, error) {
 			Provider:  f.Provider,
 			Account:   account,
 			Disabled:  f.Disabled,
+			Success:   f.Success,
+			Failed:    f.Failed,
 		})
 	}
+	// Guard: do not replace a large known inventory with an empty successful response
+	// (auth-files partial/empty under load has been observed operationally).
+	if len(out) == 0 && len(staleSnap) > 50 && staleKey == cacheKey {
+		authListCacheMu.Lock()
+		authListLastErr = "empty auth-files response; kept sticky inventory"
+		authListLastStale = true
+		authListCacheMu.Unlock()
+		return staleSnap, nil
+	}
+	xt, xe, xd := recountXAI(out)
+	authListCacheMu.Lock()
+	authListCacheAt = time.Now()
+	authListCacheKey = cacheKey
+	authListCacheData = copyAuthFiles(out)
+	authListLastErr = ""
+	authListLastStale = false
+	authListLastXAI = xt
+	authListLastEn = xe
+	authListLastDis = xd
+	authListCacheMu.Unlock()
 	return out, nil
+}
+
+// invalidateAuthListCache drops cached inventory after mutate ops.
+func invalidateAuthListCache() {
+	authListCacheMu.Lock()
+	authListCacheData = nil
+	authListCacheAt = time.Time{}
+	authListCacheKey = ""
+	authListCacheMu.Unlock()
 }
 
 func (m *mgmtAuth) SetDisabled(authIndex string, disabled bool) (bool, error) {
@@ -104,6 +242,65 @@ func (m *mgmtAuth) SetDisabled(authIndex string, disabled bool) (bool, error) {
 	return prev, nil
 }
 
+
+func (m *mgmtAuth) Delete(authIndex string) error {
+	if m == nil || m.url == "" || m.key == "" {
+		return fmt.Errorf("management not configured")
+	}
+	files, err := m.List()
+	if err != nil {
+		return err
+	}
+	var name string
+	for _, f := range files {
+		if f.AuthIndex == authIndex {
+			name = f.Name
+			break
+		}
+	}
+	if name == "" {
+		return fmt.Errorf("auth file not found for index %s", authIndex)
+	}
+	target := m.url + "/v0/management/auth-files?name=" + urlEncode(name)
+	return mgmtHTTPDelete(target, m.key)
+}
+
+func mgmtHTTPDelete(target, key string) error {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(http.MethodDelete, target, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Management-Key", key)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("mgmt DELETE %s status %d: %s", target, resp.StatusCode, truncate(string(raw), 160))
+	}
+	return nil
+}
+
+func urlEncode(s string) string {
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' {
+			b.WriteByte(c)
+		} else if c == ' ' {
+			b.WriteByte('+')
+		} else {
+			b.WriteByte('%')
+			b.WriteByte(hex[c>>4])
+			b.WriteByte(hex[c&15])
+		}
+	}
+	return b.String()
+}
 func mgmtHTTP(method, target string, body []byte, key string) ([]byte, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	var rdr io.Reader

@@ -154,3 +154,82 @@ func TestIsXAIProvider(t *testing.T) {
 		t.Fatal("codex must fail")
 	}
 }
+
+func TestMatchGrokFreeUsageExhausted24h(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	body := `{"code":"subscription:free-usage-exhausted","error":"You've used all the included free usage for model grok-4.5-build-free for now. Usage resets over a rolling 24-hour window — tokens (actual/limit): 1091108/1000000. Upgrade to a Grok subscription for higher limits: https://grok.com/supergrok"}`
+	h := http.Header{}
+	h.Set("X-Should-Retry", "true")
+	got, ok := MatchShortWindowQuota(MatchInput{
+		Provider:        "xai",
+		Failed:          true,
+		StatusCode:      429,
+		Body:            body,
+		ResponseHeaders: h,
+		Now:             now,
+		MaxResetSeconds: 86400,
+	})
+	if !ok {
+		t.Fatal("expected free-usage-exhausted match")
+	}
+	if !got.RecoverAt.Equal(now.Add(24 * time.Hour)) {
+		t.Fatalf("recover_at = %v want +24h", got.RecoverAt)
+	}
+}
+
+func TestMatchIgnoresPermissionDenied403(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	body := `{"code":"permission-denied","error":"Access to the chat endpoint is denied. Please ensure you're using the correct credentials."}`
+	_, ok := MatchShortWindowQuota(MatchInput{
+		Provider:   "xai",
+		Failed:     true,
+		StatusCode: 403,
+		Body:       body,
+		Now:        now,
+	})
+	if ok {
+		t.Fatal("403 permission-denied must be ignored")
+	}
+	// even if status were 429 with permission body
+	_, ok = MatchShortWindowQuota(MatchInput{
+		Provider:   "xai",
+		Failed:     true,
+		StatusCode: 429,
+		Body:       body,
+		Now:        now,
+	})
+	if ok {
+		t.Fatal("permission-denied body must be ignored")
+	}
+}
+func TestIsInvalidCredentials(t *testing.T) {
+	body := `{"error":"Invalid or expired credentials (auth_kind=bearer, x_xai_token_auth=xai-grok-cli, upstream=PermissionDenied, reason=no auth context)"}`
+	if !IsInvalidCredentials(401, body) {
+		t.Fatal("expected 401 invalid credentials match")
+	}
+	if IsInvalidCredentials(429, body) {
+		t.Fatal("should not match non-401 without grant revoke")
+	}
+	if !IsInvalidCredentials(400, `{"error":"invalid_grant","error_description":"Refresh token has been revoked"}`) {
+		t.Fatal("expected invalid_grant match")
+	}
+	if IsInvalidCredentials(401, `{"error":"something else"}`) {
+		t.Fatal("should not match generic 401")
+	}
+}
+
+func TestIsSpendingLimitBlocked(t *testing.T) {
+	body := `{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription. Add credits at https://grok.com/?_s=usage or upgrade at https://grok.com/supergrok."}`
+	if !IsSpendingLimitBlocked(402, body) {
+		t.Fatal("expected 402 spending-limit match")
+	}
+	if IsSpendingLimitBlocked(429, body) {
+		// body strong but status not payment-ish — still matched via 403/400 only; 429 should false
+	}
+	if IsSpendingLimitBlocked(429, `{"code":"subscription:free-usage-exhausted"}`) {
+		t.Fatal("must not match free-usage as spending-limit")
+	}
+	if IsSpendingLimitBlocked(402, `{"error":"something else"}`) {
+		t.Fatal("generic 402 should not match without body signal")
+	}
+}

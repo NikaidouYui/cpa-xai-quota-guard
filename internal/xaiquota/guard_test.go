@@ -42,6 +42,13 @@ func (m *memAuth) SetDisabled(authIndex string, disabled bool) (bool, error) {
 	return prev, nil
 }
 
+func (m *memAuth) Delete(authIndex string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.files, authIndex)
+	return nil
+}
+
 type memLog struct {
 	mu   sync.Mutex
 	msgs []string
@@ -148,5 +155,113 @@ func TestGuardSkipsParseFailure(t *testing.T) {
 	files, _ := auth.List()
 	if files[0].Disabled {
 		t.Fatal("must not disable when reset parse fails")
+	}
+}
+
+func TestGuardDeletesPermissionDenied(t *testing.T) {
+	auth := newMemAuth(AuthFile{AuthIndex: "x403", Name: "xai-403.json", Provider: "xai", Disabled: false})
+	g, err := NewGuard(Config{
+		Enabled:       true,
+		ManagementURL: "http://127.0.0.1:8317",
+		ManagementKey: "test",
+	}, auth, &memLog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.HandleUsage(UsageEvent{
+		AuthIndex:  "x403",
+		Provider:   "xai",
+		Failed:     true,
+		StatusCode: 403,
+		Body:       `{"code":"permission-denied","error":"Access to the chat endpoint is denied."}`,
+	})
+	files, _ := auth.List()
+	if len(files) != 0 {
+		t.Fatalf("expected deleted, still have %#v", files)
+	}
+}
+func TestGuardRecordsSuccessUsageTokens(t *testing.T) {
+	auth := newMemAuth(AuthFile{AuthIndex: "xs", Name: "xai-s.json", Provider: "xai", Disabled: false})
+	g, err := NewGuard(Config{
+		Enabled:       true,
+		ManagementURL: "http://127.0.0.1:8317",
+		ManagementKey: "test",
+		StatePath:     "",
+	}, auth, &memLog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.HandleUsage(UsageEvent{
+		AuthIndex:    "xs",
+		Provider:     "xai",
+		Failed:       false,
+		StatusCode:   200,
+		InputTokens:  50000,
+		OutputTokens: 800,
+		TotalTokens:  50800,
+	})
+	st := g.store.GetUsageStats()
+	if st.UsedToday != 50800 || st.RequestsToday != 1 || st.SuccessEvents != 1 {
+		t.Fatalf("success metrics not recorded: %+v", st)
+	}
+	// non-xai ignored
+	g.HandleUsage(UsageEvent{Provider: "codex", Failed: false, TotalTokens: 9999})
+	st = g.store.GetUsageStats()
+	if st.UsedToday != 50800 {
+		t.Fatalf("non-xai leaked into today: %+v", st)
+	}
+	// disabled plugin ignores (mutate config in-place to keep same store)
+	g.mu.Lock()
+	g.cfg.Enabled = false
+	g.mu.Unlock()
+	g.HandleUsage(UsageEvent{Provider: "xai", Failed: false, TotalTokens: 1000})
+	st = g.store.GetUsageStats()
+	if st.UsedToday != 50800 {
+		t.Fatalf("disabled still counted: %+v", st)
+	}
+}
+func TestGuardDeletesInvalidCredentials401(t *testing.T) {
+	auth := newMemAuth(AuthFile{AuthIndex: "x401", Name: "xai-401.json", Provider: "xai", Disabled: false})
+	g, err := NewGuard(Config{
+		Enabled:       true,
+		ManagementURL: "http://127.0.0.1:8317",
+		ManagementKey: "test",
+	}, auth, &memLog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.HandleUsage(UsageEvent{
+		AuthIndex:  "x401",
+		Provider:   "xai",
+		Failed:     true,
+		StatusCode: 401,
+		Body:       `{"error":"Invalid or expired credentials (auth_kind=bearer, x_xai_token_auth=xai-grok-cli, upstream=PermissionDenied, reason=no auth context)"}`,
+	})
+	files, _ := auth.List()
+	if len(files) != 0 {
+		t.Fatalf("expected deleted, still have %#v", files)
+	}
+}
+
+func TestGuardDeletesSpendingLimit402(t *testing.T) {
+	auth := newMemAuth(AuthFile{AuthIndex: "x402", Name: "xai-402.json", Provider: "xai", Disabled: false})
+	g, err := NewGuard(Config{
+		Enabled:       true,
+		ManagementURL: "http://127.0.0.1:8317",
+		ManagementKey: "test",
+	}, auth, &memLog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.HandleUsage(UsageEvent{
+		AuthIndex:  "x402",
+		Provider:   "xai",
+		Failed:     true,
+		StatusCode: 402,
+		Body:       `{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription."}`,
+	})
+	files, _ := auth.List()
+	if len(files) != 0 {
+		t.Fatalf("expected deleted, still have %#v", files)
 	}
 }
