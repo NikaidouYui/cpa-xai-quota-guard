@@ -1,7 +1,7 @@
 # cpa-xai-quota-guard 设计文档
 
 > xAI 专用额度/死号管控插件（CLIProxyAPI native Go）  
-> 当前实现版本：**0.1.27**（以 `main.go` 中 `pluginVer` 为准）
+> 当前实现版本：**0.2.1**（以 `main.go` 中 `pluginVer` 为准）
 
 ## 1. 目标
 
@@ -233,3 +233,11 @@ dead credential (401/402/403 白名单)
 - 仓库与 PR 禁止真实 key/token/Cookie  
 - 探针脚本若读取主机 `config.yaml` secret，仅限私有环境，**不得提交**  
 - commit 前扫描 staged diff  
+## 主动巡查 (Patrol)
+
+- 目标：全量探测**当前启用**的 xAI 凭证，删除不可恢复死号（403/401/402）。
+- 不巡查 `disabled=true` 的文件；不加 failed/success 筛选。
+- 实现：worker pool + 直读 auth 文件 token + 可选代理；结果写入 `delete_history`（reason 前缀 `patrol:`）。
+- 调度：`tickerLoop` 在 `patrol_enabled && patrol_auth_dir!=""` 时按 `patrol_interval` 触发。
+- 状态同步：删除后 `Store.Remove`；`state` 构建时 prune 不在 CPA inventory 的 tracked 记录。
+- 配置写回：UI 改动经 CPA management plugin config 持久化；功能开关字段为 `quota_guard_enabled`。

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1
+
+- 配置写回：UI 开关/巡查配置 `GET+merge+PUT` 持久化到 CPA plugin config
+- 功能开关 `quota_guard_enabled`：避免写 host `enabled=false` 导致插件卸载与路由 404
+- 账号状态同步：删除凭证后 `Store.Remove` + `PruneMissingInventory`，消除幽灵条目
+- 缓存：成功空 inventory 视为真实 0；`invalidateAuthListCache` 清零衍生指标
+- 总额度：`quota_total_est` 上限=凭证数×默认额度；`xai_total=0` 时显示 0
+- 巡查 UI：配置与操作合并单卡片；删除历史指纹渲染防抖
+- 移除注入测试卡片与死代码 `injectResponse`
+- 定时巡查日志：触发时打 info
+
 ## 0.2.0
 
 - 主动巡查(Patrol)：全量探测所有启用的xAI凭证，自动删除403/401/402死号

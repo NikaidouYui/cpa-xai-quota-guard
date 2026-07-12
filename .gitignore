@@ -43,3 +43,5 @@ scripts/find_key_meta.py
 *.bak_*
 .DS_Store
 Thumbs.db
+_workspace/
+
