@@ -61,7 +61,7 @@ plugins:
 ```bash
 curl -X POST \
   -H "Authorization: Bearer <CPA_MANAGEMENT_KEY>" \
-  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=v0.3.7"
+  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=v0.3.8"
 ```
 
 > 商店安装依赖 CPA 能拉取 GitHub Release 资产。若机器无法访问 GitHub，改用方式 B/C。
@@ -97,7 +97,7 @@ plugins:
 Release zip 下载也可同样加前缀，例如：
 
 ```text
-https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.7/cpa-xai-quota-guard_linux_amd64.zip
+https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.8/cpa-xai-quota-guard_linux_amd64.zip
 ```
 
 > 加速域名仅为网络可达性方案，**不改变**插件校验与版本语义；密钥仍只写本地配置。
@@ -177,7 +177,7 @@ docker restart cli-proxy-api   # 或 systemctl restart ...
 1. 改代码 → `go test` → 部署实测  
 2.  bump `pluginVer` + `registry.json` version + CHANGELOG  
 3. commit / push `main`  
-4. 打 tag：`git tag v0.3.7 && git push origin v0.3.7`  
+4. 打 tag：`git tag v0.3.8 && git push origin v0.3.8`  
 5. CI 构建多平台 zip 并挂到 GitHub Release  
 6. 确认 raw `registry.json` 可访问  
 

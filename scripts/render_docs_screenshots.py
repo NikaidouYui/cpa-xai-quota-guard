@@ -15,7 +15,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 # Fully synthetic / masked sample aligned with paintStatusBar field names
 MOCK = {
     "ok": True,
-    "version": "0.3.7",
+    "version": "0.3.8",
     "enabled": True,
     "now_ms": 1783915200000,
     "view": "focus",
@@ -274,7 +274,7 @@ def build_demo_html() -> Path:
       LAST_FETCH_AT = Date.now();
       applyEnabledUI(true);
       var vb = document.getElementById('verBadge');
-      if(vb) vb.textContent = 'v' + (d.version||'0.3.7');
+      if(vb) vb.textContent = 'v' + (d.version||'0.3.8');
       paintStatusBar(d);
       renderActionLog(d.delete_history, d.action_history);
       if(d.patrol) paintPatrol(d.patrol, d);

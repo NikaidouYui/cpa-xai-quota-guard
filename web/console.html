@@ -1,5 +1,5 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>xAI Quota Guard</title>
 <style>
 :root,:root[data-theme="light"]{
@@ -8,7 +8,8 @@
 :root[data-theme="dark"]{
 --bg:#0f172a;--card:#111827;--card2:#0b1220;--text:#e2e8f0;--muted:#94a3b8;--accent:#2dd4bf;--accent2:#14b8a6;--warn:#fbbf24;--err:#f87171;--ok:#34d399;--border:#334155;--soft:#1e293b;--shadow:rgba(0,0,0,.35);--chip:#1e293b;--thead:#0b1220;--row-hover:#1e293b;--body-bg:radial-gradient(1000px 500px at 0% 0%,#134e4a 0%,transparent 50%),linear-gradient(165deg,#0b1220,#111827 50%,#0f172a)
 }
-*{box-sizing:border-box}body{margin:0;background:var(--body-bg);color:var(--text);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;padding:1.25rem}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--body-bg);color:var(--text);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;min-height:100dvh;padding:1.25rem;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
 .theme-toggle{display:none!important}
 
 
@@ -44,16 +45,6 @@ button.off:hover{background:#fef2f2}
 .stats-group h3::before{content:"";width:.35rem;height:.35rem;border-radius:50%;background:var(--accent);display:inline-block}
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65rem}
 @media (max-width:960px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:560px){
-body{padding:.75rem}
-.stats{grid-template-columns:1fr}
-
-.row button,.row .btn{flex:1 1 auto}
-.acc-table-wrap{height:min(60vh,520px);max-height:min(60vh,520px)}
-#actionLogBox,#patrolLogBox{max-height:220px}
-h1{font-size:1.1rem}
-input,select,button{font-size:.86rem}
-}
 .stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.7rem .75rem;min-height:84px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 1px 2px var(--shadow)}
 .stat.accent{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 12%,var(--card)),var(--card))}
 .stat.warn{border-color:color-mix(in srgb,var(--warn) 50%,var(--border));background:linear-gradient(160deg,color-mix(in srgb,var(--warn) 12%,var(--card)),var(--card))}
@@ -190,6 +181,182 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
 #patrolSummaryLine .k{color:var(--muted);font-size:.76rem}
 #patrolSummaryLine b{font-variant-numeric:tabular-nums}
 .patrol-status-wrap{flex:1;min-width:220px}
+.field-grow{flex:1;min-width:0}
+.log-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.log-table th,.log-table td{text-align:left;padding:.25rem;vertical-align:top}
+.patrol-cfg-num{width:4.5rem;max-width:100%}
+.top-actions{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.top-actions-btns{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;flex:1;min-width:0}
+.pager-row{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center}
+
+/* tablet */
+@media (max-width:960px){
+.card{padding:.9rem .85rem}
+.acc-table-wrap{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.log-scroll{-webkit-overflow-scrolling:touch}
+}
+
+/* phone */
+@media (max-width:640px){
+body{
+  padding:.65rem .6rem;
+  padding-left:max(.6rem,env(safe-area-inset-left));
+  padding-right:max(.6rem,env(safe-area-inset-right));
+  padding-bottom:max(.75rem,env(safe-area-inset-bottom));
+}
+.wrap{max-width:100%;width:100%}
+.grid{gap:.6rem}
+h1{font-size:1.05rem;gap:.35rem}
+.sub{font-size:.8rem;margin-bottom:.55rem;line-height:1.4}
+.card{padding:.75rem .7rem;border-radius:10px;overflow:hidden}
+.card > .card-title{font-size:.92rem}
+.card > .card-desc{font-size:.74rem;margin-bottom:.5rem}
+.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+.stat{min-height:68px;padding:.55rem .55rem}
+.stat b{font-size:1.05rem}
+.stat span.lbl{font-size:.72rem}
+.stat .sub{font-size:.68rem}
+button,.btn,input,select{
+  font-size:16px; /* 避免 iOS 聚焦自动放大 */
+  min-height:2.5rem;
+}
+button,.btn{padding:.55rem .75rem;flex:1 1 calc(50% - .3rem);touch-action:manipulation}
+input,select{padding:.5rem .6rem;width:100%;max-width:100%}
+.row{gap:.45rem;align-items:stretch}
+.row > label{flex:1 1 100%;min-width:0!important;max-width:100%!important}
+.row > label input,.row > label select{width:100%;max-width:100%}
+.row > input,.row > select{flex:1 1 100%;min-width:0!important}
+.top-actions{flex-direction:column;align-items:stretch;gap:.45rem}
+.top-actions-btns{width:100%}
+.top-actions-btns button{flex:1 1 calc(50% - .25rem);min-width:0}
+#nowLabel{font-size:.76rem;text-align:right}
+.patrol-status-wrap{flex:1 1 100%;min-width:0}
+.patrol-cfg-num{width:100%}
+#cfgPatrolModel,#cfgPatrolDir,#cfgPatrolProxy,#cfgKey,#logSearch,#accSearch{min-width:0!important;width:100%}
+#btnRefreshPatrolModels{flex:1 1 100%;min-width:0!important}
+.acc-toolbar{flex-direction:column;align-items:stretch;gap:.4rem;padding:.5rem}
+.acc-toolbar > select,.acc-toolbar > input{width:100%;min-width:0!important;flex:1 1 auto}
+.pager-row{width:100%;justify-content:space-between}
+.pager-row button{flex:1 1 auto}
+#accPageInfo,#logFilterInfo{font-size:.74rem;line-height:1.35;width:100%}
+.acc-table-wrap{
+  height:auto;
+  max-height:min(70vh,640px);
+  border:none;
+  background:transparent;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+}
+/* 账号表 → 卡片 */
+table.acc{border-collapse:separate;border-spacing:0 0}
+table.acc thead{display:none}
+table.acc tbody{display:block}
+table.acc tbody tr[data-auth]{
+  display:block;
+  margin-bottom:.55rem;
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:.55rem .6rem .45rem;
+  background:var(--card);
+  box-shadow:none;
+}
+table.acc tbody tr[data-auth].row-auto{background:linear-gradient(180deg,#f0fdfa 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth].row-due{background:linear-gradient(180deg,#fef2f2 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth].row-over{background:linear-gradient(180deg,#fff7ed 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth].row-manual{background:linear-gradient(180deg,#f5f3ff 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth]:hover{background:var(--card)}
+table.acc tbody tr[data-auth].row-auto:hover{background:linear-gradient(180deg,#f0fdfa 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth].row-due:hover{background:linear-gradient(180deg,#fef2f2 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth].row-over:hover{background:linear-gradient(180deg,#fff7ed 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth].row-manual:hover{background:linear-gradient(180deg,#f5f3ff 0%,var(--card) 70%)}
+table.acc tbody tr[data-auth] td{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:.55rem;
+  padding:.28rem 0;
+  border:none;
+  width:100%;
+}
+table.acc tbody tr[data-auth] td:first-child{
+  display:block;
+  padding-bottom:.4rem;
+  margin-bottom:.2rem;
+  border-bottom:1px solid var(--soft);
+}
+table.acc tbody tr[data-auth] td:not(:first-child)::before{
+  content:attr(data-label);
+  color:var(--muted);
+  font-size:.7rem;
+  font-weight:650;
+  flex:0 0 4.2rem;
+  line-height:1.4;
+  padding-top:.1rem;
+}
+table.acc tbody tr[data-auth] td > *{min-width:0;text-align:right}
+table.acc tbody tr[data-auth] td:first-child > *{text-align:left}
+table.acc tbody tr[data-auth] .acc-meta,table.acc tbody tr[data-auth] .acc-pill-row{justify-content:flex-end}
+table.acc tbody tr[data-auth] .stack{align-items:flex-end}
+table.acc tbody tr[data-auth] td:first-child .stack,
+table.acc tbody tr[data-auth] td:first-child .acc-row-main{align-items:flex-start}
+table.acc tbody tr[data-auth] td[data-label="原因"]{flex-direction:column;align-items:stretch}
+table.acc tbody tr[data-auth] td[data-label="原因"] > *{text-align:left}
+table.acc tbody tr[data-auth] td[data-label="今日用量"] .stack{align-items:flex-end}
+table.acc tbody tr:not([data-auth]){display:block;padding:.75rem .5rem}
+table.acc tbody tr:not([data-auth]) td{display:block;border:none;text-align:center;padding:.5rem}
+/* 日志表 → 卡片 */
+.log-table thead{display:none}
+.log-table, .log-table tbody{display:block;width:100%}
+.log-table tbody tr{
+  display:block;
+  border:1px solid var(--border);
+  border-radius:8px;
+  margin-bottom:.4rem;
+  padding:.4rem .5rem;
+  background:var(--card2);
+  border-bottom:1px solid var(--border)!important;
+}
+.log-table tbody td{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:.5rem;
+  padding:.18rem 0!important;
+  border:none;
+  white-space:normal!important;
+  overflow:visible!important;
+  text-overflow:unset!important;
+  max-width:none!important;
+  width:100%;
+  word-break:break-word;
+}
+.log-table tbody td::before{
+  content:attr(data-label);
+  color:var(--muted);
+  font-size:.68rem;
+  font-weight:650;
+  flex:0 0 2.8rem;
+  line-height:1.35;
+}
+.log-table tbody td:last-child{flex-direction:column;align-items:stretch}
+.log-table tbody td:last-child::before{margin-bottom:.1rem}
+.log-table tbody tr:not(:has(td[data-label])) td{display:block;text-align:center}
+.log-table tbody tr:not(:has(td[data-label])) td::before{display:none}
+#actionLogBox,#patrolLogBox,.log-scroll{max-height:min(42vh,280px)}
+#patrolSummaryLine{gap:.35rem .5rem}
+#patrolSummaryLine .k{font-size:.72rem}
+.footer-note{font-size:.74rem!important;line-height:1.45;word-break:break-word}
+.footer-note code{word-break:break-all}
+:root[data-theme="dark"] table.acc tbody tr[data-auth].row-auto{background:linear-gradient(180deg,#0f2a28 0%,var(--card) 75%)}
+:root[data-theme="dark"] table.acc tbody tr[data-auth].row-due{background:linear-gradient(180deg,#2a1212 0%,var(--card) 75%)}
+:root[data-theme="dark"] table.acc tbody tr[data-auth].row-over{background:linear-gradient(180deg,#2a1a0c 0%,var(--card) 75%)}
+:root[data-theme="dark"] table.acc tbody tr[data-auth].row-manual{background:linear-gradient(180deg,#1f1830 0%,var(--card) 75%)}
+}
+@media (max-width:380px){
+.stats{grid-template-columns:1fr}
+.top-actions-btns button{flex:1 1 100%}
+button,.btn{flex:1 1 100%}
+}
 
 </style></head><body><div class="wrap">
 <div class="topbar">
@@ -201,8 +368,8 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
 </div>
 <div class="grid">
   <div class="card">
-    <div class="row" style="justify-content:space-between">
-      <div class="row">
+    <div class="top-actions">
+      <div class="top-actions-btns">
         <button class="primary on" id="btnToggle" onclick="togglePlugin()" title="切换插件总开关"><span class="status-dot on" id="enDot"></span><span id="enBtnText">加载中…</span></button>
         <button onclick="forceReloadState()">刷新</button>
         <button onclick="runBackfill()" id="btnBackfill" title="从 CPAMP 回补今日真实 token 用量">CPAMP 回补</button>
@@ -240,7 +407,7 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
     <div class="card-title">管理 API 鉴权</div><div class="card-desc">Key 仅存本机浏览器 localStorage，不写回服务器配置明文。</div>
     <div class="guide" id="cfgGuide">请填写 X-Management-Key 并保存；该 key 仅保存在本机浏览器 localStorage，不会写回插件配置面板以外的明文日志。</div>
     <div class="row">
-      <input id="cfgKey" type="password" placeholder="X-Management-Key" style="flex:1;min-width:220px">
+      <input id="cfgKey" class="field-grow" type="password" placeholder="X-Management-Key" autocomplete="off" style="flex:1;min-width:0">
       <button class="primary" onclick="saveKey()">保存 Key</button>
     </div>
     <div class="muted" style="margin-top:.45rem;font-size:.82rem" id="cfgMeta">management_url / key 状态加载中…</div>
@@ -250,43 +417,43 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
       <div><div class="card-title">主动巡查</div><div class="card-desc" id="patrolHint">全量只扫「已启用」；仅复核只扫「程序自动冷却」。并发在用户上限内按负载/探测健康弹性伸缩。</div></div>
     </div>
     <div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
-      <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem">
-        <input type="checkbox" id="cfgPatrolEn" style="width:auto"> 启用定时巡查
+      <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem;flex:1 1 auto">
+        <input type="checkbox" id="cfgPatrolEn" style="width:auto;min-height:auto"> 启用定时巡查
       </label>
       <label style="font-size:.85rem">周期(分钟)
-        <input id="cfgPatrolInt" type="number" min="1" step="1" style="width:80px" placeholder="60" title="保存时换算为秒">
+        <input id="cfgPatrolInt" class="patrol-cfg-num" type="number" min="1" step="1" inputmode="numeric" placeholder="60" title="保存时换算为秒">
       </label>
       <label style="font-size:.85rem">超时(秒)
-        <input id="cfgPatrolTO" type="number" min="1" step="1" style="width:60px" placeholder="15">
+        <input id="cfgPatrolTO" class="patrol-cfg-num" type="number" min="1" step="1" inputmode="numeric" placeholder="15">
       </label>
       <label style="font-size:.85rem" title="插件加载后首次定时巡查延迟，避免重启立刻全量打上游">首轮延迟(秒)
-        <input id="cfgPatrolInitDelay" type="number" min="0" step="1" style="width:70px" placeholder="60">
+        <input id="cfgPatrolInitDelay" class="patrol-cfg-num" type="number" min="0" step="1" inputmode="numeric" placeholder="60">
       </label>
       <label style="font-size:.85rem">并发上限
-        <input id="cfgPatrolCon" title="并发硬上限。实际线程在上限内按 load1 与超时/网络错误率弹性伸缩（空闲爬升至上限，压力收缩）" type="number" min="1" step="1" style="width:60px" placeholder="上限24·弹性">
+        <input id="cfgPatrolCon" class="patrol-cfg-num" title="并发硬上限。实际线程在上限内按 load1 与超时/网络错误率弹性伸缩（空闲爬升至上限，压力收缩）" type="number" min="1" step="1" inputmode="numeric" placeholder="上限24·弹性">
       </label>
       <label style="font-size:.85rem">每轮上限(0=不限·默认)
-        <input id="cfgPatrolBatch" type="number" min="0" step="1" style="width:60px" placeholder="0">
+        <input id="cfgPatrolBatch" class="patrol-cfg-num" type="number" min="0" step="1" inputmode="numeric" placeholder="0">
       </label>
       <button class="primary" onclick="savePatrolConfig()">保存配置</button>
     </div>
     <div class="row" style="gap:.6rem;flex-wrap:wrap;margin-top:.4rem">
-      <label style="font-size:.85rem;flex:1;min-width:200px">auth 目录
+      <label class="field-grow" style="font-size:.85rem;flex:1 1 200px;min-width:0">auth 目录
         <input id="cfgPatrolDir" type="text" placeholder="/root/.cli-proxy-api" style="width:100%">
       </label>
-      <label style="font-size:.85rem;flex:1;min-width:180px">代理(可选)
+      <label class="field-grow" style="font-size:.85rem;flex:1 1 180px;min-width:0">代理(可选)
         <input id="cfgPatrolProxy" type="text" placeholder="socks5://host:port" style="width:100%">
       </label>
     </div>
     <div class="row" style="gap:.6rem;flex-wrap:wrap;margin-top:.4rem;align-items:flex-end">
-      <label style="font-size:.85rem;flex:1 1 280px;min-width:240px;max-width:420px;box-sizing:border-box">探测模型
+      <label class="field-grow" style="font-size:.85rem;flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box">探测模型
         <select id="cfgPatrolModel" style="width:100%;min-height:2rem;max-width:100%;box-sizing:border-box">
           <option value="grok-4.5">grok-4.5（默认）</option>
         </select>
       </label>
-      <button type="button" id="btnRefreshPatrolModels" onclick="refreshPatrolModels()" style="white-space:nowrap;min-width:7.5rem;flex:0 0 auto">刷新模型列表</button>
-      <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem;white-space:nowrap;flex:0 0 auto">
-        <input type="checkbox" id="cfgPatrolAutoModel" style="width:auto"> 402 自动换模型再测
+      <button type="button" id="btnRefreshPatrolModels" onclick="refreshPatrolModels()">刷新模型列表</button>
+      <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem;flex:1 1 auto">
+        <input type="checkbox" id="cfgPatrolAutoModel" style="width:auto;min-height:auto"> 402 自动换模型再测
       </label>
     </div>
     <div class="muted" style="margin-top:.35rem;font-size:.78rem;min-height:1.2em;line-height:1.35;word-break:break-word" id="patrolModelHint">主模型探测；开启自动换模型时，402 会拉凭证模型列表轮询备用，仍 402 才冷却</div>
@@ -316,7 +483,7 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
     <div id="patrolLog" class="log-panel" hidden>
       <div style="font-weight:600;margin-bottom:.25rem;font-size:.8rem;color:var(--muted)">巡查探测日志 <span class="muted" id="patrolLogCount" style="font-weight:400"></span> <span class="muted" style="font-weight:400;font-size:.76rem">（优先异常/冷却/删除）</span></div>
       <div id="patrolLogBox" class="log-scroll">
-        <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <table class="log-table">
           <thead><tr style="text-align:left;color:var(--muted);border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--card)">
             <th style="padding:.25rem;width:22%">时间</th><th style="width:22%">账号</th><th style="width:12%">动作</th><th style="width:10%">HTTP</th><th>原因</th>
           </tr></thead>
@@ -330,14 +497,14 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
       <div><div class="card-title">处理日志</div><div class="card-desc">被动额度事件 + 巡查动作 · 最多显示 80 条 · 与上方探测日志分开</div></div>
     </div>
     <div class="row" style="gap:.45rem;flex-wrap:wrap;margin-bottom:.4rem;align-items:center">
-      <select id="logFilterSrc" onchange="onActionLogFilter()" style="min-width:110px">
+      <select id="logFilterSrc" onchange="onActionLogFilter()" style="flex:1 1 120px;min-width:0">
         <option value="all" selected>来源:全部</option>
         <option value="usage">被动 usage</option>
         <option value="patrol">巡查</option>
         <option value="tick">tick恢复</option>
         <option value="other">其它</option>
       </select>
-      <select id="logFilterAct" onchange="onActionLogFilter()" style="min-width:120px">
+      <select id="logFilterAct" onchange="onActionLogFilter()" style="flex:1 1 120px;min-width:0">
         <option value="all" selected>动作:全部</option>
         <option value="cooldown">冷却</option>
         <option value="delete">删除</option>
@@ -345,11 +512,11 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
         <option value="error">异常</option>
         <option value="skip">跳过</option>
       </select>
-      <input id="logSearch" placeholder="搜账号/说明/auth" oninput="onActionLogFilter()" style="flex:1;min-width:160px">
+      <input id="logSearch" class="field-grow" placeholder="搜账号/说明/auth" oninput="onActionLogFilter()" style="flex:1 1 160px;min-width:0">
       <span class="muted" id="logFilterInfo" style="font-size:.76rem">—</span>
     </div>
     <div id="actionLogBox" class="log-scroll">
-      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <table class="log-table">
         <thead><tr style="text-align:left;color:var(--muted);border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--card,#fff)">
           <th style="padding:.25rem;width:20%">时间</th>
           <th style="width:12%">动作</th>
@@ -358,7 +525,7 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
           <th style="width:8%">码</th>
           <th>说明</th>
         </tr></thead>
-        <tbody id="actionLogBody"><tr><td colspan="7" class="muted" style="padding:.5rem">加载中…</td></tr></tbody>
+        <tbody id="actionLogBody"><tr><td colspan="6" class="muted" style="padding:.5rem">加载中…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -367,7 +534,7 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
       <div><div class="card-title">账号状态</div><div class="card-desc">与状态栏凭证同源 · 固定分页 · 默认只看异常/有用量 · 倒计时本地刷新不重拉列表</div></div>
     </div>
     <div class="acc-toolbar">
-      <select id="accFilter" onchange="ACC_PAGE=1; onAccFilterChange()" style="min-width:150px">
+      <select id="accFilter" onchange="ACC_PAGE=1; onAccFilterChange()" style="flex:1 1 150px;min-width:0">
         <option value="focus" selected>关注(异常+用量)</option>
         <option value="all">全部账号</option>
         <option value="auto">自动停用</option>
@@ -384,14 +551,16 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
         <option value="inventory">仅库存未跟踪</option>
         <option value="active">活跃/其他</option>
       </select>
-      <input id="accSearch" placeholder="搜账号 / 文件 / auth_index / 信号 / 原因" oninput="onAccSearch()" style="flex:1;min-width:180px">
-      <select id="accPageSize" onchange="ACC_PAGE=1; renderAccountTable()" style="width:110px" title="固定每页条数（不分页无限增长）">
-        <option value="20" selected>20/页</option>
-        <option value="30">30/页</option>
-        <option value="50">50/页</option>
-      </select>
-      <button type="button" onclick="ACC_PAGE=Math.max(1,ACC_PAGE-1); renderAccountTable()">上一页</button>
-      <button type="button" onclick="ACC_PAGE=ACC_PAGE+1; renderAccountTable()">下一页</button>
+      <input id="accSearch" class="field-grow" placeholder="搜账号 / 文件 / auth_index / 信号 / 原因" oninput="onAccSearch()" style="flex:1 1 160px;min-width:0">
+      <div class="pager-row">
+        <select id="accPageSize" onchange="ACC_PAGE=1; renderAccountTable()" style="width:auto;min-width:5.5rem" title="固定每页条数（不分页无限增长）">
+          <option value="20" selected>20/页</option>
+          <option value="30">30/页</option>
+          <option value="50">50/页</option>
+        </select>
+        <button type="button" onclick="ACC_PAGE=Math.max(1,ACC_PAGE-1); renderAccountTable()">上一页</button>
+        <button type="button" onclick="ACC_PAGE=ACC_PAGE+1; renderAccountTable()">下一页</button>
+      </div>
       <span class="muted" id="accPageInfo" style="font-size:.82rem">—</span>
     </div>
     <div class="acc-table-wrap">
@@ -401,7 +570,7 @@ table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8f
       </table>
     </div>
   </div>
-  <div class="card muted" style="font-size:.82rem">插件 ID: <code>cpa-xai-quota-guard</code> · 状态标签: <code>plugin_auto</code> / <code>user_manual</code> · 不兼容非 xAI · 时间解析失败静默跳过</div>
+  <div class="card muted footer-note" style="font-size:.82rem">插件 ID: <code>cpa-xai-quota-guard</code> · 状态标签: <code>plugin_auto</code> / <code>user_manual</code> · 不兼容非 xAI · 时间解析失败静默跳过</div>
 </div>
 </div>
 <script>
@@ -1132,22 +1301,22 @@ function renderAccountTable(){
       else { reasonMain = reason.slice(0, 40) + "…"; reasonSub = reason; }
     }
     return '<tr data-auth="'+esc(a.auth_index||"")+'" class="'+rowClass+'">'+
-      '<td><div class="acc-row-main"><span class="acc-dot'+(dot?(' '+dot):'')+'" title="'+esc(health||'')+'"></span><div>'+
+      '<td data-label="账号"><div class="acc-row-main"><span class="acc-dot'+(dot?(' '+dot):'')+'" title="'+esc(health||'')+'"></span><div>'+
         '<div class="acc-name" title="'+esc(name)+'">'+esc(name)+'</div>'+
         (file?'<div class="acc-file" title="'+esc(file)+'">'+esc(file)+'</div>':'')+
         (a.tier_protected?'<div class="muted" style="font-size:.68rem;margin-top:.12rem">高阶套餐</div>':'')+
       '</div></div></td>'+
-      '<td>'+tierTag(a.tier, a.tier_protected)+'</td>'+
-      '<td><div class="stack">'+stateTag(a.state,a.disable_source,health)+
+      '<td data-label="套餐">'+tierTag(a.tier, a.tier_protected)+'</td>'+
+      '<td data-label="状态"><div class="stack">'+stateTag(a.state,a.disable_source,health)+
         ((srcLabel && srcLabel!=="—")?'<div class="muted" style="font-size:.7rem;margin-top:.12rem">'+esc(srcLabel)+'</div>':'')+
       '</div></td>'+
-      '<td>'+signalTag(a.signal)+'</td>'+
-      '<td><div class="stack">'+
+      '<td data-label="信号">'+signalTag(a.signal)+'</td>'+
+      '<td data-label="恢复"><div class="stack">'+
         '<div class="recover-main">'+esc(recoverMain)+'</div>'+
         '<div data-recover-ms="'+(a.recover_at_ms||0)+'" class="recover-left '+(cd.due?'err':'muted')+'">'+esc(cd.text)+'</div>'+
       '</div></td>'+
-      '<td><div class="stack"><div class="used-main">'+esc(usedMain)+'</div><div class="acc-meta acc-pill-row">'+chips+'</div></div></td>'+
-      '<td><div class="reason-main" title="'+esc(reason)+'">'+esc(reasonMain)+'</div>'+
+      '<td data-label="今日用量"><div class="stack"><div class="used-main">'+esc(usedMain)+'</div><div class="acc-meta acc-pill-row">'+chips+'</div></div></td>'+
+      '<td data-label="原因"><div class="reason-main" title="'+esc(reason)+'">'+esc(reasonMain)+'</div>'+
         (reasonSub?'<div class="reason-sub" title="'+esc(reason)+'">'+esc(reasonSub)+'</div>':'')+
       '</td></tr>';
   }).join("");
@@ -1782,20 +1951,20 @@ function renderActionLog(deletes, actions){
   if(fp === (window.ACTION_LOG_FP||"")) return;
   window.ACTION_LOG_FP = fp;
   if(!filtered.length){
-    tb.innerHTML = '<tr><td colspan="7" class="muted" style="padding:.5rem">无匹配记录（可清空筛选）</td></tr>';
+    tb.innerHTML = '<tr><td colspan="6" class="muted" style="padding:.5rem">无匹配记录（可清空筛选）</td></tr>';
     return;
   }
   tb.innerHTML = filtered.map(function(x){
     var color = (x.action==="delete"||x.action==="deleted") ? "var(--err)" : ((x.action==="recover"||x.action==="reenable"||x.action==="reenabled") ? "var(--ok)" : (String(x.action||"").indexOf("skip")>=0 ? "var(--muted)" : "var(--warn)"));
     var actLab = (typeof passiveActionLabel==="function" ? passiveActionLabel(x.action) : null) || (typeof patrolActionLabel==="function" ? patrolActionLabel(x.action) : x.action) || x.action || "—";
     if(x.action==="delete"||x.action==="deleted") actLab = "删除";
-    return '<tr style="border-bottom:1px solid #f1f5f9">' +
-      '<td style="padding:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+fmtTime(x.time_ms)+'</td>' +
-      '<td style="color:'+color+';font-weight:600;white-space:nowrap">'+esc(actLab)+'</td>' +
-      '<td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.source||"—")+'</td>' +
-      '<td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.auth_index||"")+'">'+esc(x.account||"?")+'</td>' +
-      '<td>'+(x.http_code||"—")+'</td>' +
-      '<td style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.reason||"")+'">'+esc(x.reason||"")+'</td>' +
+    return '<tr style="border-bottom:1px solid var(--soft)">' +
+      '<td data-label="时间" style="padding:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+fmtTime(x.time_ms)+'</td>' +
+      '<td data-label="动作" style="color:'+color+';font-weight:600;white-space:nowrap">'+esc(actLab)+'</td>' +
+      '<td data-label="来源" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.source||"—")+'</td>' +
+      '<td data-label="账号" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.auth_index||"")+'">'+esc(x.account||"?")+'</td>' +
+      '<td data-label="码">'+(x.http_code||"—")+'</td>' +
+      '<td data-label="说明" style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.reason||"")+'">'+esc(x.reason||"")+'</td>' +
     '</tr>';
   }).join("");
 }
@@ -1971,11 +2140,11 @@ function paintPatrol(p, r){
       var act=e.action||"";
       var color = act==="deleted" ? "var(--err)" : (act==="alive") ? "var(--ok)" : act==="reenabled" ? "var(--accent)" : (act==="cooldown"||act==="cooldown_skip") ? "var(--accent)" : "var(--warn)";
       return '<tr style="border-bottom:1px solid var(--soft)">' +
-        '<td style="padding:.2rem;white-space:nowrap">'+fmtTime(e.time_ms)+'</td>' +
-        '<td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.account||e.file_name||e.auth_index||"?")+'</td>' +
-        '<td style="color:'+color+';font-weight:600;white-space:nowrap">'+esc(patrolActionLabel(e.action))+'</td>' +
-        '<td>'+(e.http_code||"-")+'</td>' +
-        '<td style="color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.reason||"")+'</td>' +
+        '<td data-label="时间" style="padding:.2rem;white-space:nowrap">'+fmtTime(e.time_ms)+'</td>' +
+        '<td data-label="账号" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.account||e.file_name||e.auth_index||"?")+'</td>' +
+        '<td data-label="动作" style="color:'+color+';font-weight:600;white-space:nowrap">'+esc(patrolActionLabel(e.action))+'</td>' +
+        '<td data-label="HTTP">'+(e.http_code||"-")+'</td>' +
+        '<td data-label="原因" style="color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.reason||"")+'</td>' +
       '</tr>';
     }).join("");
   }

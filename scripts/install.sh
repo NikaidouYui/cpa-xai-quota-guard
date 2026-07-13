@@ -3,9 +3,9 @@
 # Usage:
 #   CPA_PLUGINS_DIR=/path/to/plugins CPA_MGMT_KEY=xxx ./scripts/install.sh
 # Optional:
-#   VER=v0.3.7 USE_GHPROXY=1 CPA_MGMT_URL=http://127.0.0.1:8317
+#   VER=v0.3.8 USE_GHPROXY=1 CPA_MGMT_URL=http://127.0.0.1:8317
 set -euo pipefail
-VER="${VER:-v0.3.7}"
+VER="${VER:-v0.3.8}"
 USE_GHPROXY="${USE_GHPROXY:-0}"
 CPA_PLUGINS_DIR="${CPA_PLUGINS_DIR:-}"
 CPA_MGMT_URL="${CPA_MGMT_URL:-http://127.0.0.1:8317}"
