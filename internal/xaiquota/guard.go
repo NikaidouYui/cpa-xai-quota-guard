@@ -62,7 +62,7 @@ func Defaults() Config {
 			PatrolBatchSize:  0,
 			PatrolAuthDir:    "",
 			PatrolProxyURL:    "",
-			PatrolConcurrency: 16,
+			PatrolConcurrency: 24,
 			PatrolModel:            DefaultPatrolModel,
 			PatrolAutoModelSwitch:  false,
 			PatrolInitialDelaySec:  60,

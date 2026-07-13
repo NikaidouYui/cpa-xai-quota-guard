@@ -261,7 +261,7 @@ type PatrolOptions struct {
 // clampPatrolUserMax normalizes the user-configured hard upper bound.
 func clampPatrolUserMax(userMax int) int {
 	if userMax <= 0 {
-		return 16
+		return 24
 	}
 	if userMax > 64 {
 		return 64
@@ -1437,17 +1437,35 @@ func (g *Guard) hydratePatrolFromStore() {
 	g.patrol.mu.Unlock()
 }
 
-// PatrolStatus returns the current patrol state for the UI.
+// PatrolStatusOpts controls JSON payload size for UI polling.
+type PatrolStatusOpts struct {
+	// Lite omits recent_log (counters + elastic fields only).
+	Lite bool
+	// LogLimit caps recent_log. 0 = default 50; <0 = full memory log (max 500).
+	LogLimit int
+}
+
+// PatrolStatus returns UI status with default log truncation (50, interesting-first).
 func (g *Guard) PatrolStatus() PatrolStatus {
+	return g.PatrolStatusWith(PatrolStatusOpts{})
+}
+
+// PatrolStatusWith returns patrol status with optional lite/log controls.
+func (g *Guard) PatrolStatusWith(opts PatrolStatusOpts) PatrolStatus {
 	g.hydratePatrolFromStore()
 	g.patrol.mu.Lock()
 	defer g.patrol.mu.Unlock()
 
-	log := make([]patrolLogEntry, len(g.patrol.lastSweepLog))
-	copy(log, g.patrol.lastSweepLog)
-	// newest first for UI
-	for i, j := 0, len(log)-1; i < j; i, j = i+1, j-1 {
-		log[i], log[j] = log[j], log[i]
+	var log []patrolLogEntry
+	if !opts.Lite {
+		limit := opts.LogLimit
+		if limit == 0 {
+			limit = 50
+		}
+		if limit < 0 {
+			limit = 500
+		}
+		log = selectPatrolLogForUI(g.patrol.lastSweepLog, limit)
 	}
 
 	byHTTP := map[string]int{}
@@ -1468,7 +1486,7 @@ func (g *Guard) PatrolStatus() PatrolStatus {
 		TotalErrors:     g.patrol.totalErrors,
 		TotalAlive:      g.patrol.totalAlive,
 		TotalSkipped:    g.patrol.totalSkipped,
-		TotalCooldown:         g.patrol.totalCooldown,
+		TotalCooldown:      g.patrol.totalCooldown,
 		Total429CD:      g.patrol.total429CD,
 		TotalSpendCD:    g.patrol.totalSpendCD,
 		TotalReenabled:  g.patrol.totalReenabled,
@@ -1483,6 +1501,49 @@ func (g *Guard) PatrolStatus() PatrolStatus {
 		Scope:           g.patrol.scope,
 		RecentLog:       log,
 	}
+}
+
+// selectPatrolLogForUI returns newest-first log, preferring non-alive actions so
+// cooldown/delete/error rows are not buried under hundreds of 200 alive lines.
+func selectPatrolLogForUI(src []patrolLogEntry, limit int) []patrolLogEntry {
+	if limit <= 0 || len(src) == 0 {
+		return nil
+	}
+	rev := make([]patrolLogEntry, len(src))
+	copy(rev, src)
+	for i, j := 0, len(rev)-1; i < j; i, j = i+1, j-1 {
+		rev[i], rev[j] = rev[j], rev[i]
+	}
+	if len(rev) <= limit {
+		return rev
+	}
+	interesting := make([]patrolLogEntry, 0, limit)
+	alive := make([]patrolLogEntry, 0, limit)
+	for _, e := range rev {
+		act := e.Action
+		if act == "" {
+			act = "unknown"
+		}
+		if act == "alive" {
+			if len(alive) < limit {
+				alive = append(alive, e)
+			}
+			continue
+		}
+		interesting = append(interesting, e)
+		if len(interesting) >= limit {
+			break
+		}
+	}
+	out := interesting
+	if len(out) < limit {
+		need := limit - len(out)
+		if need > len(alive) {
+			need = len(alive)
+		}
+		out = append(out, alive[:need]...)
+	}
+	return out
 }
 
 // PatrolStop signals an in-progress sweep to stop after current in-flight probes.

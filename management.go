@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -193,7 +194,7 @@ func dispatchAPI(req managementRequest, action string) ([]byte, error) {
 	case "patrol/spending":
 		return patrolSpendingResponse(req)
 	case "patrol/status":
-		return patrolStatusResponse()
+		return patrolStatusResponse(req)
 	case "patrol/stop":
 		return patrolStopResponse()
 	case "patrol/config":
@@ -838,14 +839,65 @@ func patrolResponse(req managementRequest) ([]byte, error) {
 	})
 }
 
-func patrolStatusResponse() ([]byte, error) {
+func patrolStatusResponse(req managementRequest) ([]byte, error) {
 	g := guard()
-	status := g.PatrolStatus()
-	return jsonResponse(map[string]any{
-		"ok":             true,
-		"patrol":         status,
-		"delete_history": g.ListDeletes(20),
-	})
+	opts := parsePatrolStatusOpts(req)
+	status := g.PatrolStatusWith(opts)
+	out := map[string]any{
+		"ok":     true,
+		"patrol": status,
+	}
+	// delete_history is heavy and unused by patrolPoll; only include with full log requests.
+	if !opts.Lite && opts.LogLimit < 0 {
+		out["delete_history"] = g.ListDeletes(20)
+	}
+	return jsonResponse(out)
+}
+
+func parsePatrolStatusOpts(req managementRequest) xaiquota.PatrolStatusOpts {
+	opts := xaiquota.PatrolStatusOpts{}
+	// default for polling: lite-ish truncation via LogLimit=50 in PatrolStatusWith
+	q := req.Query
+	raws := []string{req.Path, req.PathAlt}
+	get := func(key string) string {
+		if q != nil {
+			if v := strings.TrimSpace(q.Get(key)); v != "" {
+				return v
+			}
+		}
+		for _, raw := range raws {
+			if raw == "" {
+				continue
+			}
+			needle := key + "="
+			if i := strings.Index(raw, needle); i >= 0 {
+				v := raw[i+len(needle):]
+				if j := strings.IndexAny(v, "&/#?"); j >= 0 {
+					v = v[:j]
+				}
+				return strings.TrimSpace(v)
+			}
+		}
+		return ""
+	}
+	lite := strings.ToLower(get("lite"))
+	if lite == "1" || lite == "true" || lite == "yes" {
+		opts.Lite = true
+	}
+	logMode := strings.ToLower(get("log"))
+	switch logMode {
+	case "full", "all", "500":
+		opts.LogLimit = -1
+	case "0", "none", "off":
+		opts.Lite = true
+	case "":
+		// keep default 50
+	default:
+		if n, err := strconv.Atoi(logMode); err == nil && n > 0 {
+			opts.LogLimit = n
+		}
+	}
+	return opts
 }
 
 func patrolStopResponse() ([]byte, error) {

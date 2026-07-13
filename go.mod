@@ -1,6 +1,6 @@
 module github.com/mortal/cpa-xai-quota-guard
 
-go 1.24.0
+go 1.26.0
 
 require (
 	github.com/router-for-me/CLIProxyAPI/v7 v7.0.0

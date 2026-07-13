@@ -6,8 +6,8 @@ import (
 )
 
 func TestClampAndResolveWorkers(t *testing.T) {
-	if clampPatrolUserMax(0) != 16 {
-		t.Fatalf("default max")
+	if clampPatrolUserMax(0) != 24 {
+		t.Fatalf("default max want 24")
 	}
 	if clampPatrolUserMax(100) != 64 {
 		t.Fatalf("cap 64")
