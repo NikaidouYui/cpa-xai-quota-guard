@@ -55,3 +55,7 @@ _deploy_*.tgz
 *.zip
 checksums.txt
 dist/
+
+# generated docs render
+docs/screenshots/_render_demo.html
+
