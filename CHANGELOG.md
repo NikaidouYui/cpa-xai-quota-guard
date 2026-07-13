@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.7
+
+- **修复** `PATROL_POLL is not defined`：补全局声明；启动巡查不再弹窗中断
+- **修复** 配置项（并发上限/代理等）不回填：`loadState` 在 patrol 跟随时抛错导致表单填充中断；增加空字段恢复填充
+- **巡查日志**：运行中约 2.4s 拉一次日志（原 4.8s），首 tick 即拉日志
+
 ## 0.3.6
 
 - **主题**：删除插件自有「深色/浅色」切换与 localStorage 主题缓存；自动跟随 CPA/CPAMP 宿主主题（`data-theme` / `dark` class / 背景亮度 / `prefers-color-scheme`），iframe 内 1.5s 同步 + MutationObserver

@@ -488,6 +488,7 @@ try{
 // ---- UI scheduling (main thread vs network/task) ----
 var STATE_TIMER = null;
 var COUNTDOWN_TIMER = null;
+var PATROL_POLL = null; // must be declared: loadState/patrolStart reference it
 var LOADING_STATE = false;
 var LAST_ACC_SIG = "";
 var LAST_LOG_SIG = "";
@@ -501,7 +502,7 @@ function scheduleStatePoll(){
     if(!isPageVisible()) return;
     if(LOADING_STATE) return;
     // during active patrol, patrolPoll owns status UI; skip full state to cut main-thread jank
-    if(PATROL_POLL) return;
+    if(typeof PATROL_POLL !== 'undefined' && PATROL_POLL) return;
     // soft-detect scheduled sweeps between state polls
     if((window._PATROL_SOFT_N = (window._PATROL_SOFT_N||0)+1) % 2 === 0){
       try{ ensurePatrolFollow(); }catch(e){}
@@ -510,17 +511,19 @@ function scheduleStatePoll(){
   }, STATE_POLL_MS);
 }
 function ensurePatrolFollow(){
-  if(PATROL_POLL) return;
+  try{ if(PATROL_POLL) return; }catch(e){ PATROL_POLL = null; }
   api("patrol/status?lite=1", {method:"GET"}).then(function(r){
     if(!r || !r.ok) return;
     var p = extractPatrol(r);
     if(!p) return;
-    paintPatrol(p, r);
-    if(p.running && !PATROL_POLL){
-      window._PATROL_POLL_N = 0;
-      PATROL_POLL = setInterval(patrolPoll, 1200);
-      patrolPoll();
-    }
+    try{ paintPatrol(p, r); }catch(e){}
+    try{
+      if(p.running && !PATROL_POLL){
+        window._PATROL_POLL_N = 0;
+        PATROL_POLL = setInterval(patrolPoll, 1200);
+        patrolPoll();
+      }
+    }catch(e){ console.warn("ensurePatrolFollow", e); }
   }).catch(function(){});
 }
 function scheduleCountdown(){
@@ -1257,11 +1260,13 @@ async function loadState(opts){
     renderActionLog(d.delete_history, d.action_history);
     if(d.patrol){
       try{ paintPatrol(d.patrol, d); }catch(e){}
-      if(d.patrol.running && !PATROL_POLL){
-        window._PATROL_POLL_N = 0;
-        PATROL_POLL = setInterval(patrolPoll, 1200);
-        try{ patrolPoll(); }catch(e){}
-      }
+      try{
+        if(d.patrol.running && !PATROL_POLL){
+          window._PATROL_POLL_N = 0;
+          PATROL_POLL = setInterval(patrolPoll, 1200);
+          try{ patrolPoll(); }catch(e){}
+        }
+      }catch(e){ console.warn("patrol follow attach", e); }
     }
     const s = d.summary || {};
     const tip = document.getElementById("recoverTip");
@@ -1314,6 +1319,25 @@ async function loadState(opts){
         try{ bindPatrolFormDirty(); }catch(e){}
         // Do NOT auto-call refreshPatrolModels here: rebuilding <select> races with user
         // edits and snaps model back to default/first option.
+      }
+      // recovery: if form still empty (prior load aborted mid-way), fill once when not dirty
+      if(!PATROL_FORM_DIRTY){
+        var conEl = document.getElementById("cfgPatrolCon");
+        var pxEl = document.getElementById("cfgPatrolProxy");
+        var dirEl = document.getElementById("cfgPatrolDir");
+        if(conEl && !String(conEl.value||"").trim() && cfg.patrol_concurrency!=null){
+          conEl.value = cfg.patrol_concurrency || 24;
+        }
+        if(pxEl && !String(pxEl.value||"").trim() && cfg.patrol_proxy_url){
+          pxEl.value = cfg.patrol_proxy_url || "";
+          window._PATROL_UI_PROXY = pxEl.value;
+          window._PATROL_UI_PROXY_SET = true;
+        }
+        if(dirEl && !String(dirEl.value||"").trim() && cfg.patrol_auth_dir){
+          dirEl.value = cfg.patrol_auth_dir || "";
+        }
+        var enEl = document.getElementById("cfgPatrolEn");
+        if(enEl && !PATROL_CFG_APPLIED){ enEl.checked = !!cfg.patrol_enabled; }
       }
       var curModel = (document.getElementById("cfgPatrolModel")||{}).value || cfg.patrol_model || "grok-4.5";
       var curProxy = (document.getElementById("cfgPatrolProxy")||{}).value || "";
@@ -1970,7 +1994,7 @@ async function patrolSpendingStart(){
     var r = await api("patrol/spending", {method:"POST"});
     if(!r || !r.ok){ alert("冷却复查启动失败: "+JSON.stringify(r&&r.error||r)); if(btn){btn.disabled=false;btn.textContent="仅复查冷却号";} if(main) main.disabled=false; return; }
     paintPatrol(extractPatrol(r), r);
-    if(PATROL_POLL) clearInterval(PATROL_POLL);
+    try{ if(PATROL_POLL) clearInterval(PATROL_POLL); }catch(e){}
     PATROL_POLL = setInterval(patrolPoll, 1200);
     patrolPoll();
   } catch(e){
@@ -1990,7 +2014,7 @@ async function patrolStart(){
     var r = await api("patrol", {method:"POST"});
     if(!r || !r.ok){ alert("巡查启动失败: "+JSON.stringify(r&&r.error||r)); btn.disabled=false; btn.textContent="启动巡查"; return; }
     paintPatrol(extractPatrol(r), r);
-    if(PATROL_POLL) clearInterval(PATROL_POLL);
+    try{ if(PATROL_POLL) clearInterval(PATROL_POLL); }catch(e){}
     PATROL_POLL = setInterval(patrolPoll, 1200);
     patrolPoll();
   } catch(e){
@@ -2004,9 +2028,10 @@ async function patrolStop(){
   setTimeout(patrolPoll, 300);
 }
 async function patrolPoll(){
+  try{
   window._PATROL_POLL_N = (window._PATROL_POLL_N||0) + 1;
-  // lite every tick; full log every 4th tick (~4.8s) or when not running
-  var wantLog = (!PATROL_POLL) || (window._PATROL_POLL_N % 4 === 0);
+  // lite every tick; log every 2nd tick (~2.4s) + first tick + when idle
+  var wantLog = (!PATROL_POLL) || (window._PATROL_POLL_N <= 1) || (window._PATROL_POLL_N % 2 === 0);
   var path = wantLog ? "patrol/status?log=50" : "patrol/status?lite=1";
   var r = await api(path, {method:"GET"});
   if(!r || !r.ok) return;
@@ -2017,13 +2042,13 @@ async function patrolPoll(){
   if(!p.running && PATROL_POLL){
     clearInterval(PATROL_POLL);
     PATROL_POLL = null;
-    // final full snapshot with interesting log
     try{
       var rf = await api("patrol/status?log=50", {method:"GET"});
       if(rf && rf.ok){ var pf=extractPatrol(rf); if(pf) paintPatrol(pf, rf); }
     }catch(e){}
-    try{ loadState(); }catch(e){}
+    try{ loadState({soft:true}); }catch(e){}
   }
+  }catch(e){ console.warn("patrolPoll", e); }
 }
 // page open: sync last patrol status once
 setTimeout(function(){ try{ window._PATROL_POLL_N=3; patrolPoll(); ensurePatrolFollow(); }catch(e){} }, 800);
