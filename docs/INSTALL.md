@@ -61,7 +61,7 @@ plugins:
 ```bash
 curl -X POST \
   -H "Authorization: Bearer <CPA_MANAGEMENT_KEY>" \
-  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=v0.2.23"
+  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=v0.3.1"
 ```
 
 > 商店安装依赖 CPA 能拉取 GitHub Release 资产。若机器无法访问 GitHub，改用方式 B/C。
@@ -69,6 +69,39 @@ curl -X POST \
 ### 4. 打开
 
 插件菜单 → **cpa-xai-quota-guard** 配置页。
+
+
+## 方式 A2：GitHub 加速商店源（公开可用）
+
+当机器访问 `raw.githubusercontent.com` / GitHub Release 不稳定时，可把 store 源换成公共加速前缀（示例使用 [ghproxy](https://ghproxy.com) 类公开镜像；可用性随第三方变化，可替换为你自建镜像）：
+
+```yaml
+plugins:
+  enabled: true
+  dir: "plugins"
+  store-sources:
+    # 原版
+    # - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    # 加速 raw（二选一即可）
+    - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    # 或使用仓库内镜像清单文件（内容与 registry.json 相同，便于自建 CDN 只同步此文件）
+    # - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.mirror.json"
+  configs:
+    cpa-xai-quota-guard:
+      enabled: true
+      quota_guard_enabled: true
+      management_url: "http://127.0.0.1:8317"
+      management_key: "<CPA_MANAGEMENT_KEY>"
+```
+
+Release zip 下载也可同样加前缀，例如：
+
+```text
+https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.1/cpa-xai-quota-guard_linux_amd64.zip
+```
+
+> 加速域名仅为网络可达性方案，**不改变**插件校验与版本语义；密钥仍只写本地配置。
+
 
 ## 方式 B：GitHub Release 手动安装
 

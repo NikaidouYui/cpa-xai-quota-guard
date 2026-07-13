@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1
+
+- **删除**「额度/巡查速览」柱图（数据常为 0 / 易误导）
+- **巡查并发**：按 CPU 自动限流，界面「并发」为**上限**（`resolvePatrolWorkers`）
+- **UI 性能**：状态轮询 30s；倒计时 2s 仅更新 DOM 文本；页面隐藏时停轮询；巡查日志 DOM 限 40 行；处理日志最多 80 条
+- **风格收敛**：去掉厚重卡片渐变/阴影，回到更简洁的面板布局；账号行增加状态圆点
+- **文案**：副标题、巡查/日志/账号卡说明、按钮 title 精简
+- **安装源**：`registry.json` + `registry.mirror.json`（ghproxy 加速 raw）；`docs/INSTALL.md` 增加加速源说明
+- 前端资源：`web/console.html` + `//go:embed`（management.go）
+
+
 ## 0.3.0
 
 - **主题**：浅色/深色切换（`data-theme` + localStorage；默认跟随系统）

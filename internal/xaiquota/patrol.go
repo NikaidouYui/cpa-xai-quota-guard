@@ -1,6 +1,7 @@
 package xaiquota
 
 import (
+	"runtime"
 	"fmt"
 	"io"
 	"encoding/json"
@@ -243,6 +244,46 @@ type PatrolOptions struct {
 	Scope string `json:"scope"`
 }
 
+
+// resolvePatrolWorkers chooses worker count from system resources, capped by user max.
+// User-configured PatrolConcurrency is a hard upper bound (never exceeded).
+func resolvePatrolWorkers(userMax, candidates int) int {
+	max := userMax
+	if max <= 0 {
+		max = 8
+	}
+	if max > 64 {
+		max = 64
+	}
+	ncpu := runtime.NumCPU()
+	if ncpu < 1 {
+		ncpu = 1
+	}
+	// Leave headroom for host process: prefer ~75% of CPUs, min 1, soft floor 2 on multi-core.
+	auto := (ncpu*3 + 3) / 4
+	if auto < 1 {
+		auto = 1
+	}
+	if ncpu >= 2 && auto < 2 {
+		auto = 2
+	}
+	// On very large hosts, still keep auto modest unless user raises max.
+	if auto > 16 {
+		auto = 16
+	}
+	w := auto
+	if w > max {
+		w = max
+	}
+	if candidates > 0 && w > candidates {
+		w = candidates
+	}
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
 // PatrolSweep iterates auth files with a worker pool, probes upstream, and acts on results.
 func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 	g.patrol.mu.Lock()
@@ -348,13 +389,8 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 		candidates = candidates[:batchLimit]
 	}
 
-	workers := cfg.PatrolConcurrency
-	if workers <= 0 {
-		workers = 8
-	}
-	if workers > len(candidates) && len(candidates) > 0 {
-		workers = len(candidates)
-	}
+	workers := resolvePatrolWorkers(cfg.PatrolConcurrency, len(candidates))
+	g.logf("info", "patrol workers=%d (user_max=%d cpu=%d candidates=%d)", workers, cfg.PatrolConcurrency, runtime.NumCPU(), len(candidates))
 
 	g.patrol.mu.Lock()
 	g.patrol.totalCandidates = len(candidates)
