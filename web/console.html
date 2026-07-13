@@ -9,7 +9,7 @@
 --bg:#0f172a;--card:#111827;--card2:#0b1220;--text:#e2e8f0;--muted:#94a3b8;--accent:#2dd4bf;--accent2:#14b8a6;--warn:#fbbf24;--err:#f87171;--ok:#34d399;--border:#334155;--soft:#1e293b;--shadow:rgba(0,0,0,.35);--chip:#1e293b;--thead:#0b1220;--row-hover:#1e293b;--body-bg:radial-gradient(1000px 500px at 0% 0%,#134e4a 0%,transparent 50%),linear-gradient(165deg,#0b1220,#111827 50%,#0f172a)
 }
 *{box-sizing:border-box}body{margin:0;background:var(--body-bg);color:var(--text);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;padding:1.25rem}
-.theme-toggle{display:inline-flex;align-items:center;gap:.35rem;font-size:.82rem}
+.theme-toggle{display:none!important}
 
 
 
@@ -148,15 +148,56 @@ label > span.lbl{display:block;margin-bottom:.15rem;color:var(--muted);font-size
 #patrolErrBreak:empty{display:none}
 
 
+
+
+/* host dark: tag/badge contrast */
+:root[data-theme="dark"] .badge{background:#134e4a;color:#99f6e4;border-color:#115e59}
+:root[data-theme="dark"] .badge.off{background:#7f1d1d;color:#fecaca;border-color:#991b1b}
+:root[data-theme="dark"] .badge.on{background:#064e3b;color:#a7f3d0;border-color:#047857}
+:root[data-theme="dark"] .badge.muted{background:#1e293b;color:#94a3b8;border-color:#334155}
+:root[data-theme="dark"] .tag.auto{background:#164e63;color:#a5f3fc;border-color:#0e7490}
+:root[data-theme="dark"] .tag.manual{background:#78350f;color:#fde68a;border-color:#b45309}
+:root[data-theme="dark"] .tag.active{background:#064e3b;color:#a7f3d0;border-color:#047857}
+:root[data-theme="dark"] .tag.due{background:#7f1d1d;color:#fecaca;border-color:#b91c1c}
+:root[data-theme="dark"] .tag.over{background:#7c2d12;color:#fed7aa;border-color:#c2410c}
+:root[data-theme="dark"] .tag.cpa{background:#1e293b;color:#cbd5e1;border-color:#475569}
+:root[data-theme="dark"] .tag.hot{background:#164e63;color:#a5f3fc;border-color:#0e7490}
+:root[data-theme="dark"] .chip{background:#1e293b;color:#94a3b8;border-color:#334155}
+:root[data-theme="dark"] .chip.hot{background:#164e63;color:#a5f3fc;border-color:#0e7490}
+:root[data-theme="dark"] .chip.over{background:#7c2d12;color:#fed7aa;border-color:#c2410c}
+:root[data-theme="dark"] table.acc tbody tr.row-auto{background:linear-gradient(90deg,#0f2a28 0%,#111827 55%,var(--card) 100%)}
+:root[data-theme="dark"] table.acc tbody tr.row-due{background:linear-gradient(90deg,#2a1212 0%,#111827 55%,var(--card) 100%)}
+:root[data-theme="dark"] table.acc tbody tr.row-over{background:linear-gradient(90deg,#2a1a0c 0%,#111827 55%,var(--card) 100%)}
+:root[data-theme="dark"] table.acc tbody tr.row-manual{background:linear-gradient(90deg,#1f1830 0%,#111827 55%,var(--card) 100%)}
+
+/* 0.3.5 account / patrol polish */
+table.acc tbody tr.row-auto{background:linear-gradient(90deg,#f0fdfa 0%,#f8fffd 55%,var(--card) 100%)}
+table.acc tbody tr.row-due{background:linear-gradient(90deg,#fef2f2 0%,#fff8f8 55%,var(--card) 100%)}
+table.acc tbody tr.row-over{background:linear-gradient(90deg,#fff7ed 0%,#fffaf5 55%,var(--card) 100%)}
+table.acc tbody tr.row-manual{background:linear-gradient(90deg,#f5f3ff 0%,#faf8ff 55%,var(--card) 100%)}
+.acc-name{font-weight:650;font-size:.88rem;letter-spacing:.01em}
+.acc-file{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.68rem;opacity:.85}
+.acc-meta .chip{font-size:.68rem}
+.reason-main{font-weight:600;font-size:.8rem;line-height:1.4;color:var(--text)}
+.reason-sub{color:var(--muted);font-size:.7rem;margin-top:.15rem;line-height:1.35}
+.tag{font-weight:600;letter-spacing:.01em}
+.recover-main{font-weight:650;font-variant-numeric:tabular-nums;font-size:.82rem}
+.recover-left{font-size:.76rem;font-variant-numeric:tabular-nums}
+.used-main{font-weight:700;font-size:.92rem;font-variant-numeric:tabular-nums}
+#patrolStatus{display:block;max-width:100%;line-height:1.45;word-break:break-word}
+#patrolStatusLine2{display:block;margin-top:.2rem;font-size:.76rem;color:var(--muted);line-height:1.4;word-break:break-word}
+#patrolSummaryLine{gap:.55rem}
+#patrolSummaryLine .k{color:var(--muted);font-size:.76rem}
+#patrolSummaryLine b{font-variant-numeric:tabular-nums}
+.patrol-status-wrap{flex:1;min-width:220px}
+
 </style></head><body><div class="wrap">
 <div class="topbar">
   <div>
     <h1>xAI Quota Guard <span class="badge" id="enBadge">…</span> <span class="badge muted" id="verBadge">v0</span></h1>
     <div class="sub">仅管控 xAI：免费额度耗尽自动冷却并到期恢复；积分耗尽冷却不删；真失效凭证才删除；手动停用永不自动启用</div>
   </div>
-  <div class="row">
-    <button type="button" class="theme-toggle" id="btnTheme" onclick="toggleTheme()" title="切换浅色/深色主题">主题</button>
-  </div>
+  <!-- theme follows CPA/CPAMP host; no local toggle -->
 </div>
 <div class="grid">
   <div class="card">
@@ -255,19 +296,19 @@ label > span.lbl{display:block;margin-bottom:.15rem;color:var(--muted);font-size
       <button id="patrolBtn" class="warn" onclick="patrolStart()" title="全量：只扫当前启用中的 xAI（跳过全部已禁用，含冷却号）">全量巡查</button>
       <button id="patrolSpendBtn" class="primary" onclick="patrolSpendingStart()" title="仅复核：只扫 plugin_auto 已禁用冷却号（429 free-usage 与 402 spending；不含启用中）">仅复查冷却号</button>
       <button id="patrolStopBtn" class="off" onclick="patrolStop()" style="display:none">停止巡查</button>
-      <span id="patrolStatus" class="muted" style="font-size:.82rem">空闲</span>
+      <div class="patrol-status-wrap"><span id="patrolStatus" class="muted" style="font-size:.84rem">空闲</span><span id="patrolStatusLine2"></span></div>
     </div>
     <div id="patrolProgress" class="prog-panel" hidden>
       <div style="background:var(--soft);border-radius:6px;height:.5rem;overflow:hidden;margin-top:.5rem">
         <div id="patrolBar" style="background:var(--accent);height:100%;width:0%;transition:width .3s"></div>
       </div>
-      <div id="patrolSummaryLine" class="row" style="margin-top:.35rem;gap:.45rem;font-size:.8rem;flex-wrap:wrap;align-items:center">
-        <span>已探测: <b id="patrolProbed">0</b></span>
-        <span style="color:var(--ok)">存活: <b id="patrolAlive">0</b></span>
-        <span style="color:var(--err)">删除: <b id="patrolDeleted">0</b></span>
-        <span style="color:var(--accent)">冷却: <b id="patrolCD">0</b></span>
-        <span class="muted">恢复: <b id="patrolReen">0</b></span>
-        <span style="color:var(--warn)">异常: <b id="patrolErrors">0</b></span>
+            <div id="patrolSummaryLine" class="row" style="margin-top:.4rem;gap:.55rem;font-size:.8rem;flex-wrap:wrap;align-items:center">
+        <span class="k">探测 <b id="patrolProbed">0</b></span>
+        <span class="k" style="color:var(--ok)">存活 <b id="patrolAlive">0</b></span>
+        <span class="k" style="color:var(--err)">删除 <b id="patrolDeleted">0</b></span>
+        <span class="k" style="color:var(--accent)">冷却 <b id="patrolCD">0</b></span>
+        <span class="k">恢复 <b id="patrolReen">0</b></span>
+        <span class="k" style="color:var(--warn)">异常 <b id="patrolErrors">0</b></span>
         <span class="muted" id="patrolErrBreak" style="font-size:.76rem"></span>
       </div>
       <div id="patrolHttpStats" class="row" style="margin-top:.3rem;gap:.3rem;flex-wrap:wrap;font-size:.76rem"></div>
@@ -366,24 +407,83 @@ label > span.lbl{display:block;margin-bottom:.15rem;color:var(--muted);font-size
 <script>
 const API = "/v0/management/cpa-xai-quota-guard";
 const KEY_LS = "cpaXaiQgKey";
-const THEME_LS = "cpaXaiQgTheme";
 function mgmtKey(){ return localStorage.getItem(KEY_LS) || ""; }
 function setMgmtKey(v){ localStorage.setItem(KEY_LS, v || ""); }
-function preferredTheme(){
-  var t = localStorage.getItem(THEME_LS);
-  if(t==="light"||t==="dark") return t;
-  try{ if(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark"; }catch(e){}
+// Theme: follow CPA / CPAMP host shell (no plugin-owned dark mode toggle).
+function detectHostTheme(){
+  // 1) same-window / parent document cues
+  var roots = [];
+  try{ roots.push(document.documentElement); roots.push(document.body); }catch(e){}
+  try{
+    if(window.parent && window.parent !== window){
+      roots.push(window.parent.document.documentElement);
+      roots.push(window.parent.document.body);
+    }
+  }catch(e){ /* cross-origin parent: ignore */ }
+  try{
+    if(window.top && window.top !== window){
+      roots.push(window.top.document.documentElement);
+      roots.push(window.top.document.body);
+    }
+  }catch(e){}
+  for(var i=0;i<roots.length;i++){
+    var el = roots[i];
+    if(!el) continue;
+    var dt = (el.getAttribute && (el.getAttribute("data-theme") || el.getAttribute("data-color-mode") || el.getAttribute("data-bs-theme"))) || "";
+    dt = String(dt||"").toLowerCase();
+    if(dt==="dark" || dt==="light") return dt;
+    var cls = String(el.className||"").toLowerCase();
+    if(/\b(dark|theme-dark|dark-mode|darkmode|is-dark)\b/.test(cls)) return "dark";
+    if(/\b(light|theme-light|light-mode|lightmode|is-light)\b/.test(cls)) return "light";
+    try{
+      var cs = window.getComputedStyle(el);
+      var bg = (cs && (cs.backgroundColor||"")) || "";
+      // rgb dark-ish backgrounds from host shell
+      var m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      if(m){
+        var r=+m[1], g=+m[2], b=+m[3];
+        var lum = (0.2126*r + 0.7152*g + 0.0722*b)/255;
+        if(lum < 0.35) return "dark";
+        if(lum > 0.75) return "light";
+      }
+    }catch(e){}
+  }
+  // 2) system preference as last resort (host often mirrors it)
+  try{
+    if(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  }catch(e){}
   return "light";
 }
-function applyTheme(t){
+function applyHostTheme(t){
   t = (t==="dark") ? "dark" : "light";
   document.documentElement.setAttribute("data-theme", t);
-  try{ localStorage.setItem(THEME_LS, t); }catch(e){}
-  var b = document.getElementById("btnTheme");
-  if(b) b.textContent = (t==="dark") ? "浅色" : "深色";
+  document.documentElement.style.colorScheme = t;
+  // do NOT write local theme preference — host is source of truth
 }
-function toggleTheme(){ applyTheme(document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark"); }
-applyTheme(preferredTheme());
+function syncHostTheme(){
+  applyHostTheme(detectHostTheme());
+}
+syncHostTheme();
+// re-sync: host theme button may flip without reloading iframe
+setInterval(function(){ try{ syncHostTheme(); }catch(e){} }, 1500);
+try{
+  if(window.matchMedia){
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var onchg = function(){ syncHostTheme(); };
+    if(mq.addEventListener) mq.addEventListener("change", onchg);
+    else if(mq.addListener) mq.addListener(onchg);
+  }
+}catch(e){}
+try{
+  // observe parent html class/theme attr when same-origin
+  if(window.parent && window.parent !== window && window.parent.document && window.parent.document.documentElement){
+    var obs = new MutationObserver(function(){ syncHostTheme(); });
+    obs.observe(window.parent.document.documentElement, {attributes:true, attributeFilter:["class","data-theme","data-color-mode","data-bs-theme"]});
+    if(window.parent.document.body){
+      obs.observe(window.parent.document.body, {attributes:true, attributeFilter:["class","data-theme","data-color-mode","data-bs-theme"]});
+    }
+  }
+}catch(e){}
 
 // ---- UI scheduling (main thread vs network/task) ----
 var STATE_TIMER = null;
@@ -402,8 +502,26 @@ function scheduleStatePoll(){
     if(LOADING_STATE) return;
     // during active patrol, patrolPoll owns status UI; skip full state to cut main-thread jank
     if(PATROL_POLL) return;
+    // soft-detect scheduled sweeps between state polls
+    if((window._PATROL_SOFT_N = (window._PATROL_SOFT_N||0)+1) % 2 === 0){
+      try{ ensurePatrolFollow(); }catch(e){}
+    }
     loadState({soft:true});
   }, STATE_POLL_MS);
+}
+function ensurePatrolFollow(){
+  if(PATROL_POLL) return;
+  api("patrol/status?lite=1", {method:"GET"}).then(function(r){
+    if(!r || !r.ok) return;
+    var p = extractPatrol(r);
+    if(!p) return;
+    paintPatrol(p, r);
+    if(p.running && !PATROL_POLL){
+      window._PATROL_POLL_N = 0;
+      PATROL_POLL = setInterval(patrolPoll, 1200);
+      patrolPoll();
+    }
+  }).catch(function(){});
 }
 function scheduleCountdown(){
   if(COUNTDOWN_TIMER) clearInterval(COUNTDOWN_TIMER);
@@ -994,30 +1112,41 @@ function renderAccountTable(){
       chips += '<span class="chip'+(over?' over':'')+'">滚 '+fmtToken(a.rolling_actual)+'/'+(a.rolling_limit?fmtToken(a.rolling_limit):'?')+(over?' 超限':'')+'</span>';
     }
     if(a.last_tokens){ chips += '<span class="chip hot">近 '+fmtToken(a.last_tokens)+'</span>'; }
-    if(a.cpa_success!=null){ chips += '<span class="chip">CPA成功 '+a.cpa_success+'</span>'; }
+    if(a.cpa_success!=null && Number(a.cpa_success)>0){ chips += '<span class="chip">CPA成功 '+a.cpa_success+'</span>'; }
     let rowClass = "";
     if(over) rowClass = "row-over";
     else if(health==="due") rowClass = "row-due";
+    else if(health==="manual") rowClass = "row-manual";
     else if(health==="auto") rowClass = "row-auto";
     const name = a.account || a.file_name || a.auth_index || "—";
     const file = a.file_name || "";
     const recoverMain = a.recover_at_ms ? fmtTime(a.recover_at_ms) : "—";
     var dot = accDotClass(a);
+    var reasonMain = reason, reasonSub = "";
+    if(reason && reason.length > 42){
+      var cut = reason.indexOf("·");
+      if(cut > 8 && cut < 48){ reasonMain = reason.slice(0, cut).trim(); reasonSub = reason.slice(cut+1).trim(); }
+      else { reasonMain = reason.slice(0, 40) + "…"; reasonSub = reason; }
+    }
     return '<tr data-auth="'+esc(a.auth_index||"")+'" class="'+rowClass+'">'+
       '<td><div class="acc-row-main"><span class="acc-dot'+(dot?(' '+dot):'')+'" title="'+esc(health||'')+'"></span><div>'+
-        '<div class="acc-name">'+esc(name)+'</div>'+(file?'<div class="acc-file">'+esc(file)+'</div>':'')+
-        (a.tier_protected?'<div class="muted" style="font-size:.7rem">高阶套餐标记</div>':'')+
+        '<div class="acc-name" title="'+esc(name)+'">'+esc(name)+'</div>'+
+        (file?'<div class="acc-file" title="'+esc(file)+'">'+esc(file)+'</div>':'')+
+        (a.tier_protected?'<div class="muted" style="font-size:.68rem;margin-top:.12rem">高阶套餐</div>':'')+
       '</div></div></td>'+
       '<td>'+tierTag(a.tier, a.tier_protected)+'</td>'+
       '<td><div class="stack">'+stateTag(a.state,a.disable_source,health)+
-        (srcLabel!=="—"?'<div class="muted" style="font-size:.72rem">'+esc(srcLabel)+'</div>':'')+
+        ((srcLabel && srcLabel!=="—")?'<div class="muted" style="font-size:.7rem;margin-top:.12rem">'+esc(srcLabel)+'</div>':'')+
       '</div></td>'+
       '<td>'+signalTag(a.signal)+'</td>'+
-      '<td><div class="stack mono">'+esc(recoverMain)+
-        '<div data-recover-ms="'+(a.recover_at_ms||0)+'" class="'+(cd.due?'err':'muted')+'" style="font-size:.78rem">'+esc(cd.text)+'</div>'+
+      '<td><div class="stack">'+
+        '<div class="recover-main">'+esc(recoverMain)+'</div>'+
+        '<div data-recover-ms="'+(a.recover_at_ms||0)+'" class="recover-left '+(cd.due?'err':'muted')+'">'+esc(cd.text)+'</div>'+
       '</div></td>'+
-      '<td><div class="stack"><div class="mono" style="font-weight:700">'+esc(usedMain)+'</div><div class="acc-meta acc-pill-row">'+chips+'</div></div></td>'+
-      '<td><div class="reason-main">'+esc(reason)+'</div></td></tr>';
+      '<td><div class="stack"><div class="used-main">'+esc(usedMain)+'</div><div class="acc-meta acc-pill-row">'+chips+'</div></div></td>'+
+      '<td><div class="reason-main" title="'+esc(reason)+'">'+esc(reasonMain)+'</div>'+
+        (reasonSub?'<div class="reason-sub" title="'+esc(reason)+'">'+esc(reasonSub)+'</div>':'')+
+      '</td></tr>';
   }).join("");
 }
 
@@ -1126,7 +1255,14 @@ async function loadState(opts){
     paintStatusBar(d);
     /* del hist merged */
     renderActionLog(d.delete_history, d.action_history);
-    if(d.patrol){ try{ paintPatrol(d.patrol, d); }catch(e){} }
+    if(d.patrol){
+      try{ paintPatrol(d.patrol, d); }catch(e){}
+      if(d.patrol.running && !PATROL_POLL){
+        window._PATROL_POLL_N = 0;
+        PATROL_POLL = setInterval(patrolPoll, 1200);
+        try{ patrolPoll(); }catch(e){}
+      }
+    }
     const s = d.summary || {};
     const tip = document.getElementById("recoverTip");
     if(tip && s.hot_hidden > 0){
@@ -1714,61 +1850,84 @@ function paintPatrol(p, r){
   var hasPatrolData = !!(p.running || probed>0 || p.started_at_ms || p.completed_at_ms || p.last_error);
   if(prog){ if(hasPatrolData){ prog.hidden=false; prog.style.display=""; } else { prog.hidden=true; prog.style.display="none"; } }
   var st = document.getElementById("patrolStatus");
-  var extra = "";
+  var st2 = document.getElementById("patrolStatusLine2");
   var wMax = Number(p.workers_max||0);
-  var wMin = Number(p.workers_min||0);
   var load1 = Number(p.load1||0);
   var scaleR = (p.scale_reason||"").trim();
-  if(workers > 0){
-    if(wMax > 0) extra += " · 实际" + workers + "/" + wMax + "线程";
-    else extra += " · " + workers + "线程";
-    if(wMin > 0 && wMin !== workers) extra += "(min"+wMin+")";
-  }
-  if(load1 > 0 || scaleR){
-    if(load1 > 0) extra += " · load1 " + load1.toFixed(2);
-    if(scaleR) extra += " · " + scaleR;
-  }
-  // duration / rate / ETA
+  var scaleLabel = scaleR
+    .replace(/load_idle_max\+max/g, "空闲顶满")
+    .replace(/load_idle_max/g, "空闲加速")
+    .replace(/load_ok\+climb/g, "负载正常·爬升")
+    .replace(/load_ok/g, "负载正常")
+    .replace(/load_moderate/g, "负载中等")
+    .replace(/load_high/g, "负载偏高")
+    .replace(/load_critical/g, "负载过高")
+    .replace(/probe_pressure_min/g, "探测超时·收缩")
+    .replace(/probe_pressure_half/g, "探测压力·降速")
+    .replace(/no_loadavg_3x/g, "无负载数据")
+    .replace(/base_3x_cpu/g, "基准")
+    .replace(/\+climb/g, "·爬升")
+    .replace(/\+max/g, "·顶满")
+    .replace(/\/smooth_up/g, "")
+    .replace(/\/smooth_down/g, "")
+    .replace(/initial/g, "启动中");
   var stMs = Number(p.started_at_ms||0);
   var ctMs = Number(p.completed_at_ms||0);
   var nowMs = Date.now();
   var endMs = p.running ? nowMs : (ctMs || nowMs);
-  if(stMs > 0 && endMs > stMs){
-    var durS = (endMs - stMs) / 1000;
-    if(probed > 0 && durS > 0){
-      var rate = probed / durS;
-      extra += " · " + formatPatrolDur(durS) + " · " + rate.toFixed(1) + "/s";
-      if(p.running && candidates > probed && rate > 0){
-        var eta = (candidates - probed) / rate;
-        extra += " · 预计剩" + formatPatrolDur(eta);
-      }
-    } else if(durS > 0){
-      extra += " · " + formatPatrolDur(durS);
-    }
+  var durS = (stMs > 0 && endMs > stMs) ? ((endMs - stMs) / 1000) : 0;
+  var rate = (probed > 0 && durS > 0) ? (probed / durS) : 0;
+  var thr = "";
+  if(workers > 0){
+    thr = wMax > 0 ? (workers + "/" + wMax + " 线程") : (workers + " 线程");
   }
-  if(candidates > 0) extra += " · 候选 " + candidates;
-  if(skipped > 0) extra += " · 跳过 " + skipped;
+  var line1 = "";
+  var line2 = "";
   if(p.running){
-    st.textContent = "巡查中... 已探测 " + probed + "/" + (candidates||"?") + extra;
+    var leftN = Math.max(0, (candidates||0) - probed);
+    var eta = (rate > 0 && leftN > 0) ? formatPatrolDur(leftN / rate) : "";
+    line1 = "巡查中 " + probed + "/" + (candidates||"?");
+    if(thr) line1 += " · " + thr;
+    if(rate > 0) line1 += " · " + rate.toFixed(1) + "/s";
+    if(eta) line1 += " · 剩 " + eta;
+    var d2 = [];
+    if(durS > 0) d2.push("已用 " + formatPatrolDur(durS));
+    if(load1 > 0) d2.push("load " + load1.toFixed(2));
+    if(scaleLabel) d2.push(scaleLabel);
+    if(skipped > 0) d2.push("跳过 " + skipped);
+    line2 = d2.join(" · ");
     st.style.color = "var(--accent)";
     document.getElementById("patrolBtn").textContent = "巡查中...";
     document.getElementById("patrolBtn").disabled = true;
     document.getElementById("patrolStopBtn").style.display = "";
-  var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
+    var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
   } else {
-    var err = p.last_error ? (" · 错误: " + p.last_error) : "";
-    var scope = p.scope ? (" · 范围 " + (p.scope==="spending_only"?"冷却复核":"全量启用")) : "";
-    var saved = p.saved_at_ms ? (" · 已持久化") : "";
+    var err = p.last_error ? ("错误: " + p.last_error) : "";
+    var scope = p.scope ? (p.scope==="spending_only"?"冷却复核":"全量启用") : "";
     if(probed===0 && !p.started_at_ms && !p.completed_at_ms){
-      st.textContent = "空闲 · 尚无巡查结果（启动全量/仅复核或等待定时巡查）" + extra;
+      line1 = "空闲 · 等待手动/定时巡查";
+      line2 = thr ? ("上次并发 " + thr) : "";
     } else {
-      st.textContent = "已完成 · 探测 " + probed + " · 存活 " + alive + " · 删除 " + deleted + " · 冷却 " + Number(p.total_cooldown||0) + " · 恢复 " + Number(p.total_reenabled||0) + " · 异常 " + errors + extra + scope + saved + err;
+      // totals only in summary chips — avoid dual summary strings
+      line1 = "已完成";
+      if(scope) line1 += " · " + scope;
+      if(durS > 0) line1 += " · " + formatPatrolDur(durS);
+      if(rate > 0) line1 += " · " + rate.toFixed(1) + "/s";
+      if(thr) line1 += " · " + thr;
+      var d2b = [];
+      if(load1 > 0) d2b.push("load " + load1.toFixed(2));
+      if(scaleLabel) d2b.push(scaleLabel);
+      if(p.saved_at_ms) d2b.push("已持久化");
+      if(err) d2b.push(err);
+      line2 = d2b.join(" · ");
     }
     st.style.color = "var(--muted)";
     document.getElementById("patrolBtn").textContent = "启动巡查";
     document.getElementById("patrolBtn").disabled = false;
     document.getElementById("patrolStopBtn").style.display = "none";
   }
+  st.textContent = line1;
+  if(st2) st2.textContent = line2 || "";
   var log = p.recent_log || [];
   var tbody = document.getElementById("patrolLogBody");
   var logWrap = document.getElementById("patrolLog");
@@ -1867,5 +2026,6 @@ async function patrolPoll(){
   }
 }
 // page open: sync last patrol status once
-setTimeout(function(){ try{ window._PATROL_POLL_N=3; patrolPoll(); }catch(e){} }, 800);
+setTimeout(function(){ try{ window._PATROL_POLL_N=3; patrolPoll(); ensurePatrolFollow(); }catch(e){} }, 800);
+setInterval(function(){ if(!isPageVisible()||PATROL_POLL) return; try{ ensurePatrolFollow(); }catch(e){} }, 8000);
 </script></body></html>

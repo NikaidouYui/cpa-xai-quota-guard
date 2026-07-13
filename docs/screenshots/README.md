@@ -6,16 +6,13 @@
 
 | 文件 | 说明 |
 |------|------|
-| `dashboard.svg` | 状态栏 / 额度概览示意（矢量占位，非真实截图） |
-| `patrol.svg` | 主动巡查与处理日志示意 |
-| `accounts.svg` | 账号状态表示意 |
+| `dashboard.png` | 状态栏 / 额度概览（真实页脱敏） |
+| `patrol.png` | 主动巡查卡（代理/账号已脱敏） |
+| `accounts.png` | 账号状态表（邮箱/文件名已遮盖） |
+| `*.svg` | 旧矢量占位（保留作回退） |
 
-## 如何更新为真实截图
+## 脱敏约定
 
-1. 打开 CPA 管理中心 → 插件菜单 **xAI Quota Guard**（或 `.../cpa-xai-quota-guard/index.html`）
-2. 浏览器全页截图（推荐 1280×800 左右）
-3. 导出为 PNG：`dashboard.png` / `patrol.png` / `accounts.png`
-4. 脱敏：遮盖 management key、完整邮箱、代理 URL、真实 auth_index
-5. 替换本目录文件后，更新 README 中对应图片路径（PNG 优先于 SVG）
-
-> 切勿提交含密钥、Cookie、完整 token 的截图。
+- 遮盖：management key、代理账号密码、完整邮箱、auth 文件名中的敏感前缀
+- 可保留：汇总数字、按钮布局、HTTP 状态 chips、套餐/状态标签样式
+- 切勿提交含密钥、Cookie、完整 token 的截图

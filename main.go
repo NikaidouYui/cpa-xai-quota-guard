@@ -68,7 +68,7 @@ import (
 
 const (
 	pluginID   = "cpa-xai-quota-guard"
-	pluginVer  = "0.3.4"
+	pluginVer  = "0.3.6"
 	pluginAuth = "@mortal"
 	pluginRepo = "https://github.com/mortal/cpa-xai-quota-guard"
 	pluginLogo = ""

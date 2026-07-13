@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.6
+
+- **主题**：删除插件自有「深色/浅色」切换与 localStorage 主题缓存；自动跟随 CPA/CPAMP 宿主主题（`data-theme` / `dark` class / 背景亮度 / `prefers-color-scheme`），iframe 内 1.5s 同步 + MutationObserver
+- 含 0.3.5：巡查状态单组汇总、定时巡查自动跟随、账号表 UI、脱敏截图
+
+## 0.3.5
+
+- **巡查状态文案**：主行仅进度/线程/速率/ETA；副行 load·伸缩原因；汇总数字只保留进度条下方一组 chips
+- **定时巡查实时跟随**：自动探测 `patrol/status`，定时扫启动后无需手动整页刷新
+- **账号状态 UI**：行底渐变、原因主/副文案、恢复倒计时样式、隐藏 CPA成功0
+- **文档截图**：`docs/screenshots/*.png` 脱敏真实页
 ## 0.3.4
 
 - **巡查 status 瘦身**：默认 `recent_log` 最多 50 条，**优先非存活**（冷却/删除/异常），避免 126KB 轮询卡 UI
