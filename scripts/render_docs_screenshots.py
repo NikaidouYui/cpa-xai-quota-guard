@@ -68,7 +68,7 @@ MOCK = {
         "quota_total_est": 740_000_000,
         "quota_known_accounts": 1951,
         "unobserved_accounts": 0,
-        "default_limit_per_acct": 1_000_000,
+        "default_limit_per_acct": 2_000_000,
         "include_unobserved_est": False,
         "used_today": 72_800_000,
         "used_today_display": 72_800_000,

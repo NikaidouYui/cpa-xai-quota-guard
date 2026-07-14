@@ -113,12 +113,12 @@ https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/
 
 | 指标 | 口径 |
 |------|------|
-| **日额度池(估)** | 当前**启用** xAI 数 × 1M（rolling 24h）；**禁用不算容量** |
+| **日额度池(估)** | 当前**启用** xAI 数 × 2M（rolling 24h）；**禁用不算容量** |
 | **已用 · 日历今日/累计** | 仅 `usage.handle` 真实 token（不用 free-usage actual 抬高） |
 | **滚动快照 used/limit** | 仍存活凭证的 free-usage 观测；已删号快照剔除 |
 | **进度条** | 今日已用 / 日额度池 |
 
-`include_unobserved_quota_est=true`（默认）时日池=启用×1M；`false` 时仅已观测 limit 合计。
+`include_unobserved_quota_est=true`（默认）时日池=启用×2M；`false` 时仅已观测 limit 合计。
 
 ## 配置
 
@@ -166,7 +166,7 @@ plugins:
 | `min_reset_seconds` | `0` | 最小冷却地板 |
 | `management_url` / `management_key` | 空 | CPA 管理 API |
 | `state_path` | `data/cpa-xai-quota-guard-state.json` | 持久化 |
-| `include_unobserved_quota_est` | `true` | 日池是否用启用×1M 估算 |
+| `include_unobserved_quota_est` | `true` | 日池是否用启用×2M 估算 |
 | `patrol_enabled` | `false` | 定时巡查 |
 | `patrol_interval` | `3600` | 巡查周期（秒） |
 | `patrol_timeout` | `15` | 单凭证探测超时 |
