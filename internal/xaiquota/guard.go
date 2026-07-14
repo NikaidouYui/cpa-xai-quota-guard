@@ -29,12 +29,12 @@ type Config struct {
 	WebhookURL string
 
 	// Patrol (proactive credential sweep).
-	PatrolEnabled   bool
-	PatrolInterval  float64
-	PatrolTimeout   float64
-	PatrolBatchSize int
+	PatrolEnabled     bool
+	PatrolInterval    float64
+	PatrolTimeout     float64
+	PatrolBatchSize   int
 	PatrolAuthDir     string
-	PatrolProxyURL   string
+	PatrolProxyURL    string
 	PatrolConcurrency int
 	// PatrolModel is the primary upstream model id used for credential probes.
 	// Prefer free-tier models (e.g. grok-4.5-build-free); paid models may false-positive as spending-limit.
@@ -44,7 +44,6 @@ type Config struct {
 	PatrolAutoModelSwitch bool
 	// PatrolInitialDelaySec: delay first scheduled patrol after start (0=immediate on first tick).
 	PatrolInitialDelaySec float64
-
 }
 
 // Defaults returns safe defaults. enabled=false until configured.
@@ -52,20 +51,20 @@ func Defaults() Config {
 	return Config{
 		Enabled:                   false,
 		TickSeconds:               15,
-		StatePath:                 "data/cpa-xai-quota-guard-state.json",
+		StatePath:                 "data/cpa-xai-quota-guard-state.sqlite",
 		MaxResetSeconds:           86400,
 		MinResetSeconds:           0,
 		IncludeUnobservedQuotaEst: true,
-			PatrolEnabled:    false,
-			PatrolInterval:   3600,
-			PatrolTimeout:    15,
-			PatrolBatchSize:  0,
-			PatrolAuthDir:    "",
-			PatrolProxyURL:    "",
-			PatrolConcurrency: 24,
-			PatrolModel:            DefaultPatrolModel,
-			PatrolAutoModelSwitch:  false,
-			PatrolInitialDelaySec:  60,
+		PatrolEnabled:             false,
+		PatrolInterval:            3600,
+		PatrolTimeout:             15,
+		PatrolBatchSize:           0,
+		PatrolAuthDir:             "",
+		PatrolProxyURL:            "",
+		PatrolConcurrency:         24,
+		PatrolModel:               DefaultPatrolModel,
+		PatrolAutoModelSwitch:     false,
+		PatrolInitialDelaySec:     60,
 	}
 }
 
@@ -78,13 +77,13 @@ type AuthFileLookup interface {
 
 // AuthFile is the management API subset we need.
 type AuthFile struct {
-	AuthIndex   string
-	Name        string
-	Provider    string
-	Account     string
-	Disabled    bool
-	Success     int64
-	Failed      int64
+	AuthIndex string
+	Name      string
+	Provider  string
+	Account   string
+	Disabled  bool
+	Success   int64
+	Failed    int64
 	// Optional metadata for Free/Super/Heavy classification (from CPA auth-files list).
 	Note        string
 	Label       string
@@ -124,9 +123,9 @@ type Guard struct {
 	auth   AuthFileLookup
 	logger Logger
 
-	stopCh chan struct{}
-	wg     sync.WaitGroup
-	patrol patrolState
+	stopCh     chan struct{}
+	wg         sync.WaitGroup
+	patrol     patrolState
 	patrolHTTP patrolHTTP
 }
 
@@ -155,7 +154,7 @@ func (g *Guard) ApplyConfig(cfg Config) {
 		cfg.MaxResetSeconds = 86400
 	}
 	if cfg.StatePath == "" {
-		cfg.StatePath = "data/cpa-xai-quota-guard-state.json"
+		cfg.StatePath = "data/cpa-xai-quota-guard-state.sqlite"
 	}
 	if strings.TrimSpace(cfg.PatrolModel) == "" {
 		cfg.PatrolModel = DefaultPatrolModel
@@ -168,7 +167,11 @@ func (g *Guard) ApplyConfig(cfg Config) {
 		if err != nil {
 			g.logf("error", "reload state failed: %v", err)
 		} else {
+			oldStore := g.store
 			g.store = store
+			if oldStore != nil {
+				_ = oldStore.Close()
+			}
 		}
 	}
 	oldProxy := g.cfg.PatrolProxyURL
@@ -192,6 +195,16 @@ func (g *Guard) Snapshot() map[string]AccountRecord {
 		return map[string]AccountRecord{}
 	}
 	return store.Snapshot()
+}
+
+func (g *Guard) StoreDBPath() string {
+	g.mu.Lock()
+	store := g.store
+	g.mu.Unlock()
+	if store == nil {
+		return ""
+	}
+	return store.DBPath()
 }
 
 // StartTicker starts background recovery scans.
@@ -292,7 +305,7 @@ func (g *Guard) HandleUsage(ev UsageEvent) {
 	// Region/model availability (IP/egress): never delete.
 	if IsModelRegionUnavailable(ev.StatusCode, ev.Body) {
 		g.logf("warn", "xAI 区域/模型不可用(不删号) auth=%s code=%d body=%s", authIndex, ev.StatusCode, truncate(ev.Body, 160))
-	g.appendAction("skip_region", "passive", authIndex, "", ev.Account, ev.StatusCode, "region", truncate(ev.Body, 160))
+		g.appendActionFromUsage("skip_region", "passive", authIndex, "", ev.Account, "region", truncate(ev.Body, 160), ev)
 		return
 	}
 	// Dead credentials: true 403 permission-denied / 401 invalid → delete immediately.
@@ -327,7 +340,7 @@ func (g *Guard) HandleUsage(ev UsageEvent) {
 		// Time parse failure or non-short-window: silent skip with log.
 		if ev.StatusCode == 429 {
 			g.logf("info", "xAI 429 未满足短时额度条件(信号/重置时间)，跳过 auth=%s", authIndex)
-			g.appendAction("skip_parse", "passive", authIndex, "", ev.Account, ev.StatusCode, "429", "short-window signal/reset unparsed")
+			g.appendActionFromUsage("skip_parse", "passive", authIndex, "", ev.Account, "429", "short-window signal/reset unparsed", ev)
 		}
 		return
 	}
@@ -371,11 +384,14 @@ func (g *Guard) disableForMatch(authIndex string, ev UsageEvent, match MatchResu
 	existing := g.storeGet(authIndex)
 	if current.Disabled {
 		if existing != nil && existing.State == StateAutoDisabled && existing.DisableSource == SourcePluginAuto && existing.Owner == Owner && !existing.PreDisabled {
-			// Extend cooldown.
+			// Extend cooldown — never shorten a longer free-usage/spending wait with short model_capacity.
 			rec := *existing
-			rec.RecoverAtMS = match.RecoverAt.UnixMilli()
-			rec.Reason = match.Reason
-			rec.Signal = match.Signal
+			newRecoverMS := match.RecoverAt.UnixMilli()
+			if rec.RecoverAtMS > newRecoverMS {
+				newRecoverMS = rec.RecoverAtMS
+			}
+			rec.RecoverAtMS = newRecoverMS
+			rec.Signal, rec.Reason = mergeCooldownSignal(rec.Signal, rec.Reason, match.Signal, match.Reason, newRecoverMS == match.RecoverAt.UnixMilli())
 			rec.LastEventHash = ev.EventHash
 			if rec.Account == "" {
 				rec.Account = firstNonEmpty(ev.Account, current.Account)
@@ -387,8 +403,8 @@ func (g *Guard) disableForMatch(authIndex string, ev UsageEvent, match MatchResu
 				g.logf("error", "延长冷却写状态失败 auth=%s: %v", authIndex, err)
 				return
 			}
-			g.logf("info", "已延长 plugin_auto 冷却 auth=%s recover_at=%s", authIndex, match.RecoverAt.Format(time.RFC3339))
-			g.appendAction("cooldown_extend", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), ev.StatusCode, match.Signal, match.Reason)
+			g.logf("info", "已延长 plugin_auto 冷却 auth=%s recover_at=%s signal=%s", authIndex, time.UnixMilli(rec.RecoverAtMS).Format(time.RFC3339), rec.Signal)
+			g.appendActionFromUsage("cooldown_extend", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), rec.Signal, rec.Reason, ev)
 			return
 		}
 		// Mark user manual and never auto-enable.
@@ -406,32 +422,7 @@ func (g *Guard) disableForMatch(authIndex string, ev UsageEvent, match MatchResu
 		}
 		_ = g.storeUpsert(rec)
 		g.logf("info", "账号已禁用且无本插件所有权，标记 user_manual，跳过 auth=%s", authIndex)
-		g.appendAction("skip_manual", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), ev.StatusCode, "user_manual", "already_disabled_without_plugin_ownership")
-		return
-	}
-
-	prev, err := g.auth.SetDisabled(authIndex, true)
-	if err != nil {
-		g.logf("error", "禁用失败 auth=%s: %v", authIndex, err)
-		return
-	}
-	if prev {
-		// Race: became disabled between list and patch.
-		rec := AccountRecord{
-			AuthIndex:     authIndex,
-			FileName:      current.Name,
-			Provider:      "xai",
-			Account:       firstNonEmpty(ev.Account, current.Account),
-			DisableSource: SourceUserManual,
-			State:         StateUserManualDisabled,
-			DisabledAtMS:  time.Now().UnixMilli(),
-			PreDisabled:   true,
-			Reason:        "pre_disabled_race",
-			LastEventHash: ev.EventHash,
-		}
-		_ = g.storeUpsert(rec)
-		g.logf("info", "禁用竞态：账号此前已禁用，标记 user_manual auth=%s", authIndex)
-		g.appendAction("skip_manual", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), ev.StatusCode, "user_manual", "pre_disabled_race")
+		g.appendActionFromUsage("skip_manual", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), "user_manual", "already_disabled_without_plugin_ownership", ev)
 		return
 	}
 
@@ -451,13 +442,41 @@ func (g *Guard) disableForMatch(authIndex string, ev UsageEvent, match MatchResu
 		Signal:        match.Signal,
 		LastEventHash: ev.EventHash,
 	}
+	// Persist ownership before mutating CPA. A crash can leave a provisional
+	// record, which Tick reconciles, but cannot leave an unowned disabled file.
 	if err := g.storeUpsert(rec); err != nil {
-		g.logf("error", "写状态失败 auth=%s: %v", authIndex, err)
+		g.logf("error", "禁用前写状态失败 auth=%s: %v", authIndex, err)
 		return
 	}
+	prev, err := g.auth.SetDisabled(authIndex, true)
+	if err != nil {
+		_ = g.storeRemove(authIndex)
+		g.logf("error", "禁用失败 auth=%s: %v", authIndex, err)
+		return
+	}
+	if prev {
+		// Race: became disabled between list and patch.
+		rec := AccountRecord{
+			AuthIndex:     authIndex,
+			FileName:      current.Name,
+			Provider:      "xai",
+			Account:       firstNonEmpty(ev.Account, current.Account),
+			DisableSource: SourceUserManual,
+			State:         StateUserManualDisabled,
+			DisabledAtMS:  time.Now().UnixMilli(),
+			PreDisabled:   true,
+			Reason:        "pre_disabled_race",
+			LastEventHash: ev.EventHash,
+		}
+		_ = g.storeUpsert(rec)
+		g.logf("info", "禁用竞态：账号此前已禁用，标记 user_manual auth=%s", authIndex)
+		g.appendActionFromUsage("skip_manual", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), "user_manual", "pre_disabled_race", ev)
+		return
+	}
+
 	g.logf("warn", "xAI 额度限制已禁用 auth=%s file=%s recover_at=%s signal=%s",
 		authIndex, current.Name, match.RecoverAt.Format(time.RFC3339), match.Signal)
-	g.appendAction("cooldown", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), ev.StatusCode, match.Signal, match.Reason)
+	g.appendActionFromUsage("cooldown", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), match.Signal, match.Reason, ev)
 	g.NotifyWebhook("quota_cooldown", map[string]any{
 		"auth_index": authIndex,
 		"recover_at": match.RecoverAt.Format(time.RFC3339),
@@ -474,6 +493,7 @@ func (g *Guard) Tick() {
 	if cfg.ManagementURL == "" || cfg.ManagementKey == "" || g.auth == nil {
 		return
 	}
+	g.reconcileAutoDisabledInventory()
 	due := g.storeDue(time.Now())
 	for _, rec := range due {
 		// Re-check ownership and current disabled state.
@@ -503,10 +523,43 @@ func (g *Guard) Tick() {
 		}
 		_ = g.storeMarkActive(rec.AuthIndex)
 		g.logf("info", "xAI 额度重置到达，已自动启用 auth=%s file=%s", rec.AuthIndex, rec.FileName)
-		g.appendAction("recover", "tick", rec.AuthIndex, rec.FileName, rec.Account, 0, rec.Signal, "recover_at reached")
+		g.appendAction(ActionEvent{
+			Action: "recover", Source: "tick",
+			AuthIndex: rec.AuthIndex, FileName: rec.FileName, Account: rec.Account,
+			Signal: rec.Signal, Reason: "recover_at reached",
+		})
 	}
 }
 
+func (g *Guard) reconcileAutoDisabledInventory() {
+	tracked := g.Snapshot()
+	if len(tracked) == 0 {
+		return
+	}
+	files, err := g.auth.List()
+	if err != nil {
+		g.logf("error", "冷却状态对账查询失败: %v", err)
+		return
+	}
+	byIndex := make(map[string]AuthFile, len(files))
+	for _, f := range files {
+		byIndex[f.AuthIndex] = f
+	}
+	for authIndex, rec := range tracked {
+		if rec.State != StateAutoDisabled || rec.DisableSource != SourcePluginAuto || rec.PreDisabled || (rec.Owner != "" && rec.Owner != Owner) {
+			continue
+		}
+		current, ok := byIndex[authIndex]
+		if !ok {
+			_ = g.storeRemove(authIndex)
+			continue
+		}
+		if !current.Disabled {
+			_ = g.storeMarkActive(authIndex)
+			g.logf("info", "冷却状态对账：CPA 已启用，清除插件冷却 auth=%s", authIndex)
+		}
+	}
+}
 
 func (g *Guard) deleteForDeadCredential(authIndex string, ev UsageEvent) {
 	cfg := g.Config()
@@ -541,7 +594,7 @@ func (g *Guard) deleteForDeadCredential(authIndex string, ev UsageEvent) {
 	}
 	g.logf("warn", "xAI 凭证失效/无权限，已删除账号 auth=%s file=%s account=%s reason=%s",
 		authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), truncate(ev.Body, 160))
-	g.appendAction("delete", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), ev.StatusCode, "dead_credential", truncate(ev.Body, 160))
+	g.appendActionFromUsage("delete", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), "dead_credential", truncate(ev.Body, 160), ev)
 	g.NotifyWebhook("dead_credential_delete", map[string]any{
 		"auth_index": authIndex,
 		"file_name":  current.Name,
@@ -565,21 +618,86 @@ func (g *Guard) ListActions(limit int) []ActionEvent {
 	return g.store.ListActions(limit)
 }
 
-func (g *Guard) appendAction(action, source, authIndex, fileName, account string, httpCode int, signal, reason string) {
+// mergeCooldownSignal prefers durable free-usage / spending_limit over short model_capacity.
+// useNew is true when the new recover_at strictly dominates (was chosen as the later time from new match only).
+func mergeCooldownSignal(oldSig, oldReason, newSig, newReason string, newDominates bool) (signal, reason string) {
+	oldSig = strings.TrimSpace(oldSig)
+	newSig = strings.TrimSpace(newSig)
+	// Capacity must not erase free-usage / spending identity while those waits still apply.
+	if newSig == "model_capacity" && oldSig != "" && oldSig != "model_capacity" {
+		return oldSig, firstNonEmpty(oldReason, newReason)
+	}
+	if oldSig == "spending_limit" && newSig != "spending_limit" && !newDominates {
+		return oldSig, firstNonEmpty(oldReason, newReason)
+	}
+	if newSig != "" {
+		return newSig, firstNonEmpty(newReason, oldReason)
+	}
+	return oldSig, firstNonEmpty(oldReason, newReason)
+}
+
+// appendAction persists one handling log entry (body/headers already optional).
+func (g *Guard) appendAction(ev ActionEvent) {
 	if g.store == nil {
 		return
 	}
-	_ = g.store.AppendAction(ActionEvent{
-		TimeMS:    time.Now().UnixMilli(),
+	if ev.TimeMS == 0 {
+		ev.TimeMS = time.Now().UnixMilli()
+	}
+	_ = g.store.AppendAction(ev)
+}
+
+// appendActionFromUsage records a passive handling decision with response snapshot for UI drill-down.
+func (g *Guard) appendActionFromUsage(action, source, authIndex, fileName, account, signal, reason string, ue UsageEvent) {
+	g.appendAction(ActionEvent{
 		Action:    action,
 		Source:    source,
 		AuthIndex: authIndex,
 		FileName:  fileName,
 		Account:   account,
-		HTTPCode:  httpCode,
+		HTTPCode:  ue.StatusCode,
 		Signal:    signal,
-		Reason:    truncate(reason, 240),
+		Reason:    reason,
+		Provider:  firstNonEmpty(ue.Provider, "xai"),
+		AuthType:  ue.AuthType,
+		Body:      ue.Body,
+		Headers:   snapshotRateLimitHeaders(ue.ResponseHeaders),
+		EventHash: ue.EventHash,
 	})
+}
+
+// snapshotRateLimitHeaders keeps only headers useful for rate-limit / 429 forensics.
+func snapshotRateLimitHeaders(h map[string][]string) map[string]string {
+	if len(h) == 0 {
+		return nil
+	}
+	hh := headerFromMap(h)
+	if hh == nil {
+		return nil
+	}
+	keys := []string{
+		"Retry-After",
+		"X-Should-Retry",
+		"X-Request-Id",
+		"X-Ratelimit-Limit-Requests",
+		"X-Ratelimit-Remaining-Requests",
+		"X-Ratelimit-Reset-Requests",
+		"X-Ratelimit-Limit-Tokens",
+		"X-Ratelimit-Remaining-Tokens",
+		"X-Ratelimit-Reset-Tokens",
+		"X-Ratelimit-Reset",
+		"Content-Type",
+	}
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		if v := strings.TrimSpace(hh.Get(k)); v != "" {
+			out[k] = truncate(v, actionHeaderMax)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (g *Guard) recordUsageMetrics(ev UsageEvent) {
@@ -643,7 +761,6 @@ func (g *Guard) MetricsWithInventoryLive(xaiTotal, xaiEnabled, xaiDisabled int, 
 	v.EstimatedToday = 0
 	return v
 }
-
 
 // UsageAndQuotaMaps returns one-shot usage/quota maps (single store read).
 func (g *Guard) UsageAndQuotaMaps() (map[string]AccountUsageSnapshot, map[string]*AccountQuotaSnapshot) {
@@ -840,15 +957,15 @@ func (g *Guard) BackfillFromCPAMP(ctx context.Context) (map[string]any, error) {
 		}
 	}
 	return map[string]any{
-		"source":         "cpamp_analytics",
-		"day_key":        DayKeyShanghai(now),
-		"from_ms":        fromMS,
-		"to_ms":          toMS,
-		"cpamp_tokens":   sum.TotalTokens,
-		"cpamp_calls":    sum.TotalCalls,
-		"cpamp_success":  sum.SuccessCalls,
-		"cpamp_failure":  sum.FailureCalls,
-		"applied":        applied,
+		"source":        "cpamp_analytics",
+		"day_key":       DayKeyShanghai(now),
+		"from_ms":       fromMS,
+		"to_ms":         toMS,
+		"cpamp_tokens":  sum.TotalTokens,
+		"cpamp_calls":   sum.TotalCalls,
+		"cpamp_success": sum.SuccessCalls,
+		"cpamp_failure": sum.FailureCalls,
+		"applied":       applied,
 	}, nil
 }
 
@@ -859,9 +976,9 @@ func (g *Guard) NotifyWebhook(event string, fields map[string]any) {
 		return
 	}
 	payload := map[string]any{
-		"plugin":    "cpa-xai-quota-guard",
-		"event":     event,
-		"ts_ms":     time.Now().UnixMilli(),
+		"plugin": "cpa-xai-quota-guard",
+		"event":  event,
+		"ts_ms":  time.Now().UnixMilli(),
 	}
 	for k, v := range fields {
 		payload[k] = v
@@ -902,26 +1019,26 @@ func (g *Guard) HealthCheck() map[string]any {
 	}
 	detailOK := st.ZeroTokenStreak < ZeroTokenAlertThreshold
 	return map[string]any{
-		"enabled":                 cfg.Enabled,
-		"management_configured":   mgmtOK,
-		"auth_list_ok":            authOK,
-		"auth_list_error":         authErr,
-		"xai_auth_files":          xaiN,
-		"state_path":              cfg.StatePath,
-		"usage_day_key":           st.DayKey,
-		"used_today":              st.UsedToday,
-		"requests_today":          st.RequestsToday,
-		"zero_token_streak":       st.ZeroTokenStreak,
-		"detail_tokens_healthy":   detailOK,
-		"cpamp_configured":        strings.TrimSpace(cfg.CPAMPURL) != "" && strings.TrimSpace(cfg.CPAMPAdminKey) != "",
-		"webhook_configured":      strings.TrimSpace(cfg.WebhookURL) != "",
-		"include_unobserved_est":  cfg.IncludeUnobservedQuotaEst,
-		"min_reset_seconds":       cfg.MinResetSeconds,
-		"max_reset_seconds":       cfg.MaxResetSeconds,
-		"ok":                      cfg.Enabled && mgmtOK && authOK && detailOK,
+		"enabled":                cfg.Enabled,
+		"management_configured":  mgmtOK,
+		"auth_list_ok":           authOK,
+		"auth_list_error":        authErr,
+		"xai_auth_files":         xaiN,
+		"state_path":             cfg.StatePath,
+		"state_db_path":          g.StoreDBPath(),
+		"usage_day_key":          st.DayKey,
+		"used_today":             st.UsedToday,
+		"requests_today":         st.RequestsToday,
+		"zero_token_streak":      st.ZeroTokenStreak,
+		"detail_tokens_healthy":  detailOK,
+		"cpamp_configured":       strings.TrimSpace(cfg.CPAMPURL) != "" && strings.TrimSpace(cfg.CPAMPAdminKey) != "",
+		"webhook_configured":     strings.TrimSpace(cfg.WebhookURL) != "",
+		"include_unobserved_est": cfg.IncludeUnobservedQuotaEst,
+		"min_reset_seconds":      cfg.MinResetSeconds,
+		"max_reset_seconds":      cfg.MaxResetSeconds,
+		"ok":                     cfg.Enabled && mgmtOK && authOK && detailOK,
 	}
 }
-
 
 func (g *Guard) UsageByAuthMap() map[string]AccountUsageSnapshot {
 	st := UsageStats{}

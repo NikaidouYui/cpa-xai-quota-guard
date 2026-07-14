@@ -23,7 +23,7 @@ func configFields() []pluginapi.ConfigField {
 		{Name: "max_reset_seconds", Type: pluginapi.ConfigFieldTypeNumber, Description: "允许的最大重置等待(秒)，超过则不禁用"},
 		{Name: "management_url", Type: pluginapi.ConfigFieldTypeString, Description: "CPA 管理 API 基址"},
 		{Name: "management_key", Type: pluginapi.ConfigFieldTypeString, Description: "CPA X-Management-Key（敏感，不回显）"},
-		{Name: "state_path", Type: pluginapi.ConfigFieldTypeString, Description: "状态持久化 JSON 路径"},
+		{Name: "state_path", Type: pluginapi.ConfigFieldTypeString, Description: "SQLite 状态库路径（旧 .json 路径会自动迁移）"},
 		{Name: "min_reset_seconds", Type: pluginapi.ConfigFieldTypeNumber, Description: "最小冷却等待(秒)，0=不限制"},
 		{Name: "include_unobserved_quota_est", Type: pluginapi.ConfigFieldTypeBoolean, Description: "总额度是否计入未观测账号×默认2M（默认开；关则仅已知 rolling limit）"},
 		{Name: "cpamp_url", Type: pluginapi.ConfigFieldTypeString, Description: "CPAMP 基址(可选，用于回补/深链)"},

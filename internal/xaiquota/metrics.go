@@ -58,39 +58,39 @@ type UsageStats struct {
 	UsageByAuth         map[string]*AccountUsageSnapshot `json:"usage_by_auth,omitempty"`
 	DefaultLimitPerAcct int64                            `json:"default_limit_per_acct,omitempty"`
 	// Detail health
-	ZeroTokenSuccessToday  int64 `json:"zero_token_success_today,omitempty"`
-	ZeroTokenSuccessTotal  int64 `json:"zero_token_success_total,omitempty"`
-	ZeroTokenStreak        int64 `json:"zero_token_streak,omitempty"`
-	LastZeroTokenAtMS      int64 `json:"last_zero_token_at_ms,omitempty"`
-	LastNonZeroTokenAtMS   int64  `json:"last_non_zero_token_at_ms,omitempty"`
-	BackfillSource         string `json:"backfill_source,omitempty"`
-	BackfillAtMS           int64  `json:"backfill_at_ms,omitempty"`
-	BackfillTokensFloor    int64  `json:"backfill_tokens_floor,omitempty"`
+	ZeroTokenSuccessToday int64  `json:"zero_token_success_today,omitempty"`
+	ZeroTokenSuccessTotal int64  `json:"zero_token_success_total,omitempty"`
+	ZeroTokenStreak       int64  `json:"zero_token_streak,omitempty"`
+	LastZeroTokenAtMS     int64  `json:"last_zero_token_at_ms,omitempty"`
+	LastNonZeroTokenAtMS  int64  `json:"last_non_zero_token_at_ms,omitempty"`
+	BackfillSource        string `json:"backfill_source,omitempty"`
+	BackfillAtMS          int64  `json:"backfill_at_ms,omitempty"`
+	BackfillTokensFloor   int64  `json:"backfill_tokens_floor,omitempty"`
 }
 
 // MetricsView is the computed dashboard payload.
 type MetricsView struct {
-	XAITotal           int    `json:"xai_total"`
-	XAIEnabled         int    `json:"xai_enabled"`
-	XAIDisabled        int    `json:"xai_disabled"`
-	QuotaTotalEst      int64  `json:"quota_total_est"`
-	QuotaUsedKnown     int64  `json:"quota_used_known"`
-	QuotaLimitKnown    int64  `json:"quota_limit_known"`
-	QuotaKnownAccounts int    `json:"quota_known_accounts"`
+	XAITotal           int   `json:"xai_total"`
+	XAIEnabled         int   `json:"xai_enabled"`
+	XAIDisabled        int   `json:"xai_disabled"`
+	QuotaTotalEst      int64 `json:"quota_total_est"`
+	QuotaUsedKnown     int64 `json:"quota_used_known"`
+	QuotaLimitKnown    int64 `json:"quota_limit_known"`
+	QuotaKnownAccounts int   `json:"quota_known_accounts"`
 	// Known-only pool (no unobserved * 1e6). Prefer this for honest display.
-	QuotaTotalKnownOnly int64 `json:"quota_total_known_only"`
-	UnobservedAccounts  int   `json:"unobserved_accounts"`
-	IncludeUnobservedEst bool `json:"include_unobserved_est"`
+	QuotaTotalKnownOnly  int64 `json:"quota_total_known_only"`
+	UnobservedAccounts   int   `json:"unobserved_accounts"`
+	IncludeUnobservedEst bool  `json:"include_unobserved_est"`
 
-	UsedToday        int64  `json:"used_today"`
-	UsedTotal        int64  `json:"used_total"`
-	UsedTodayDisplay int64  `json:"used_today_display"`
-	UsedTotalDisplay int64  `json:"used_total_display"`
-	RequestsToday    int64  `json:"requests_today"`
-	RequestsTotal    int64  `json:"requests_total"`
-	EstimatedToday   int64  `json:"estimated_today"`
-	DefaultLimitPerAcct int64 `json:"default_limit_per_acct"`
-	EstimatePerSuccess  int64 `json:"estimate_per_success"`
+	UsedToday           int64  `json:"used_today"`
+	UsedTotal           int64  `json:"used_total"`
+	UsedTodayDisplay    int64  `json:"used_today_display"`
+	UsedTotalDisplay    int64  `json:"used_total_display"`
+	RequestsToday       int64  `json:"requests_today"`
+	RequestsTotal       int64  `json:"requests_total"`
+	EstimatedToday      int64  `json:"estimated_today"`
+	DefaultLimitPerAcct int64  `json:"default_limit_per_acct"`
+	EstimatePerSuccess  int64  `json:"estimate_per_success"`
 	DayKey              string `json:"day_key"`
 
 	// Rolling 24h free-usage pool (from xAI free-usage actual/limit snapshots).
@@ -103,9 +103,9 @@ type MetricsView struct {
 	ZeroTokenStreak       int64  `json:"zero_token_streak"`
 	DetailMissingAlert    bool   `json:"detail_missing_alert"`
 	DetailAlertMessage    string `json:"detail_alert_message,omitempty"`
-	BackfillSource         string `json:"backfill_source,omitempty"`
-	BackfillAtMS           int64  `json:"backfill_at_ms,omitempty"`
-	BackfillTokensFloor    int64  `json:"backfill_tokens_floor,omitempty"`
+	BackfillSource        string `json:"backfill_source,omitempty"`
+	BackfillAtMS          int64  `json:"backfill_at_ms,omitempty"`
+	BackfillTokensFloor   int64  `json:"backfill_tokens_floor,omitempty"`
 
 	Note string `json:"note,omitempty"`
 }
@@ -196,7 +196,7 @@ func (s *Store) mutateUsage(fn func(st *UsageStats)) error {
 	s.Usage = EnsureUsageStats(s.Usage)
 	fn(s.Usage)
 	s.Updated = time.Now().UnixMilli()
-	return s.persistLocked()
+	return s.persistUsageMetaLocked()
 }
 
 // AddUsageEvent records one usage.handle event. authIndex may be empty.
@@ -205,9 +205,11 @@ func (s *Store) AddUsageEvent(authIndex string, tokens int64, failed bool, at ti
 		tokens = 0
 	}
 	authIndex = strings.TrimSpace(authIndex)
-	return s.mutateUsage(func(st *UsageStats) {
+	dayChanged := false
+	err := s.mutateUsage(func(st *UsageStats) {
 		day := DayKeyShanghai(at)
 		if st.DayKey != day {
+			dayChanged = true
 			st.DayKey = day
 			st.UsedToday = 0
 			st.RequestsToday = 0
@@ -265,6 +267,15 @@ func (s *Store) AddUsageEvent(authIndex string, tokens int64, failed bool, at ti
 		u.LastAtMS = at.UnixMilli()
 		u.LastFailed = failed
 	})
+	if err != nil {
+		return err
+	}
+	if dayChanged {
+		if err := s.persistUsageAllAuth(); err != nil {
+			return err
+		}
+	}
+	return s.persistUsageAuth(authIndex)
 }
 
 // AddUsageTokens is kept for older call sites (no per-auth).
@@ -334,7 +345,7 @@ func (s *Store) ObserveFreeQuota(authIndex string, actual, limit int64, at time.
 	}
 	// Snapshot only. Free-usage actual/limit is a rolling window probe — do NOT add
 	// deltas into calendar UsedToday/UsedTotal (those come only from usage.handle tokens).
-	return s.mutateUsage(func(st *UsageStats) {
+	err := s.mutateUsage(func(st *UsageStats) {
 		day := DayKeyShanghai(at)
 		if st.DayKey != day {
 			st.DayKey = day
@@ -352,6 +363,10 @@ func (s *Store) ObserveFreeQuota(authIndex string, actual, limit int64, at time.
 		}
 		st.LastEventAtMS = at.UnixMilli()
 	})
+	if err != nil {
+		return err
+	}
+	return s.persistUsageQuota(authIndex)
 }
 
 // BuildMetricsView combines auth-file inventory + durable usage/quota snapshots.
@@ -462,7 +477,7 @@ func BuildMetricsViewOpts(xaiTotal, xaiEnabled, xaiDisabled int, st UsageStats, 
 // for the current Shanghai day. Does NOT clear UsedTotal/RequestsTotal or QuotaByAuth snapshots.
 // Used when historical free-usage deltas polluted UsedToday before 0.2.18.
 func (s *Store) ResetCalendarToday(at time.Time, note string) error {
-	return s.mutateUsage(func(st *UsageStats) {
+	err := s.mutateUsage(func(st *UsageStats) {
 		day := DayKeyShanghai(at)
 		st.DayKey = day
 		st.UsedToday = 0
@@ -484,6 +499,10 @@ func (s *Store) ResetCalendarToday(at time.Time, note string) error {
 		}
 		st.LastEventAtMS = at.UnixMilli()
 	})
+	if err != nil {
+		return err
+	}
+	return s.persistUsageAllAuth()
 }
 
 // SetCalendarTodayExact sets UsedToday/RequestsToday to exact values for current day (does not raise UsedTotal).

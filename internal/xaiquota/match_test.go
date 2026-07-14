@@ -104,6 +104,67 @@ func TestMatchRequiresResetTime(t *testing.T) {
 	}
 }
 
+func TestMatchModelCapacitySSEBody(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	body := `{"sequence_number":0,"type":"error","code":null,"message":"The model is currently at capacity due to high demand. Please try again in a few minutes, or use a higher service tier for priority processing: https://docs.x.ai/developers/advanced-api-usage/priority-processing","param":null}`
+	// 429 path
+	got, ok := MatchShortWindowQuota(MatchInput{
+		Provider: "xai", Failed: true, StatusCode: 429, Body: body, Now: now, MaxResetSeconds: 86400,
+	})
+	if !ok {
+		t.Fatal("expected capacity match on 429")
+	}
+	if got.Signal != "model_capacity" {
+		t.Fatalf("signal=%q", got.Signal)
+	}
+	want := now.Add(time.Duration(DefaultModelCapacityCooldownSec) * time.Second)
+	if !got.RecoverAt.Equal(want) {
+		t.Fatalf("recover_at=%v want=%v", got.RecoverAt, want)
+	}
+	if !strings.Contains(got.Reason, "模型过载") && !strings.Contains(got.Reason, "容量") {
+		t.Fatalf("reason=%q", got.Reason)
+	}
+	// Stream-style status 0 / 503 also match when body is explicit capacity.
+	for _, code := range []int{0, 503, 529} {
+		g2, ok2 := MatchShortWindowQuota(MatchInput{
+			Provider: "xai", Failed: true, StatusCode: code, Body: body, Now: now, MaxResetSeconds: 86400,
+		})
+		if !ok2 || g2.Signal != "model_capacity" {
+			t.Fatalf("status %d: ok=%v signal=%q", code, ok2, g2.Signal)
+		}
+	}
+	// Must not treat capacity as free-usage 24h.
+	if got.RecoverAt.Sub(now) > 30*time.Minute {
+		t.Fatalf("capacity cooldown too long: %v", got.RecoverAt.Sub(now))
+	}
+}
+
+func TestMatchModelCapacityParsesMinutesHint(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	body := `{"type":"error","message":"The model is currently at capacity. Please try again in 10 minutes."}`
+	got, ok := MatchShortWindowQuota(MatchInput{
+		Provider: "xai", Failed: true, StatusCode: 503, Body: body, Now: now,
+	})
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if !got.RecoverAt.Equal(now.Add(10 * time.Minute)) {
+		t.Fatalf("recover_at=%v", got.RecoverAt)
+	}
+}
+
+func TestIsModelCapacityFailure(t *testing.T) {
+	if !IsModelCapacityFailure(`{"message":"The model is currently at capacity due to high demand."}`) {
+		t.Fatal("expected capacity")
+	}
+	if IsModelCapacityFailure(`{"message":"Rate limit reached for requests per minute"}`) {
+		t.Fatal("rate limit is not capacity")
+	}
+	if IsModelCapacityFailure(`{"code":"subscription:free-usage-exhausted","error":"free usage exhausted"}`) {
+		t.Fatal("free-usage is not capacity")
+	}
+}
+
 func TestMatchXAIHeaderReset(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	h := http.Header{}

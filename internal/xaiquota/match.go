@@ -32,17 +32,19 @@ type MatchResult struct {
 	Signal    string
 }
 
+// DefaultModelCapacityCooldownSec is used when xAI reports model capacity / high demand
+// without Retry-After ("try again in a few minutes").
+const DefaultModelCapacityCooldownSec = 300 // 5 minutes
+
 // MatchShortWindowQuota returns a result only for strict xAI short-window
-// rate-limit failures. Network/auth/ban/monthly-quota/generic errors are skipped.
-// Time parse failure => no match (caller must not disable).
+// rate-limit / free-usage / model-capacity failures.
+// Network/auth/ban/monthly-quota/generic errors are skipped.
+// Time parse failure => no match (caller must not disable), except capacity & free-usage defaults.
 func MatchShortWindowQuota(in MatchInput) (MatchResult, bool) {
 	if !in.Failed {
 		return MatchResult{}, false
 	}
 	if !IsXAIProvider(in.Provider, in.AuthType) {
-		return MatchResult{}, false
-	}
-	if in.StatusCode != http.StatusTooManyRequests {
 		return MatchResult{}, false
 	}
 
@@ -60,20 +62,39 @@ func MatchShortWindowQuota(in MatchInput) (MatchResult, bool) {
 		return MatchResult{}, false
 	}
 
+	capacity := IsModelCapacityFailure(body)
+	// Classic short-window path requires HTTP 429. Model capacity may also surface as
+	// 503/529/stream-failed (0/200) with a strong body message — still cool briefly.
+	if in.StatusCode != http.StatusTooManyRequests {
+		if !capacity || !isCapacityEligibleStatus(in.StatusCode) {
+			return MatchResult{}, false
+		}
+	}
+
 	signal, ok := detectShortWindowSignal(body, in.ResponseHeaders)
+	if capacity {
+		signal = "model_capacity"
+		ok = true
+	}
 	if !ok {
 		return MatchResult{}, false
 	}
 
 	recoverAt, ok := parseRecoverAt(body, in.ResponseHeaders, now, maxReset)
 	if !ok {
-		// Grok free-usage body often has "rolling 24-hour window" without Retry-After.
-		if at, okDef := defaultRecoverFromBody(body, in.ResponseHeaders, now, maxReset); okDef {
+		if capacity {
+			if at, okDef := defaultCapacityRecover(body, now, maxReset); okDef {
+				recoverAt = at
+				ok = true
+			}
+		} else if at, okDef := defaultRecoverFromBody(body, in.ResponseHeaders, now, maxReset); okDef {
+			// Grok free-usage body often has "rolling 24-hour window" without Retry-After.
 			recoverAt = at
 			ok = true
-		} else {
-			return MatchResult{}, false
 		}
+	}
+	if !ok {
+		return MatchResult{}, false
 	}
 	if !recoverAt.After(now) {
 		return MatchResult{}, false
@@ -87,6 +108,113 @@ func MatchShortWindowQuota(in MatchInput) (MatchResult, bool) {
 		Reason:    buildHumanReason(body, signal, recoverAt, now),
 		Signal:    signal,
 	}, true
+}
+
+// IsModelCapacityFailure reports xAI temporary model overload / capacity errors.
+// These are NOT free-usage exhaustion and should use a short soft cooldown.
+func IsModelCapacityFailure(body string) bool {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return false
+	}
+	lower := strings.ToLower(body)
+	// Strong phrases from production SSE/JSON error payloads.
+	strong := []string{
+		"currently at capacity",
+		"at capacity due to high demand",
+		"model is currently at capacity",
+		"capacity due to high demand",
+		"higher service tier for priority",
+		"priority processing",
+		"use a higher service tier",
+	}
+	for _, n := range strong {
+		if strings.Contains(lower, n) {
+			return true
+		}
+	}
+	// Softer pair: "at capacity" + demand/retry context.
+	if strings.Contains(lower, "at capacity") &&
+		(strings.Contains(lower, "demand") || strings.Contains(lower, "try again") || strings.Contains(lower, "few minutes")) {
+		return true
+	}
+	return false
+}
+
+func isCapacityEligibleStatus(code int) bool {
+	switch code {
+	case 0, http.StatusOK, http.StatusTooManyRequests, http.StatusInternalServerError,
+		http.StatusBadGateway, http.StatusServiceUnavailable, 529:
+		return true
+	default:
+		return false
+	}
+}
+
+// defaultCapacityRecover picks a short wait for model-capacity overload.
+// Prefers explicit "in N minutes" in the message; otherwise ~5 minutes.
+func defaultCapacityRecover(body string, now time.Time, maxReset float64) (time.Time, bool) {
+	sec := float64(DefaultModelCapacityCooldownSec)
+	lower := strings.ToLower(body)
+	// "try again in 3 minutes" / "in 10 minute(s)"
+	if n, ok := parseMinutesHint(lower); ok && n > 0 {
+		sec = float64(n) * 60
+	} else if strings.Contains(lower, "few minutes") || strings.Contains(lower, "a few minute") {
+		sec = float64(DefaultModelCapacityCooldownSec)
+	}
+	// Floor at 60s so we actually rotate off the hot model for a bit.
+	if sec < 60 {
+		sec = 60
+	}
+	// Cap capacity waits — never treat overload as multi-hour free-usage.
+	const capacityCap = 30 * 60.0 // 30 minutes hard ceiling for this signal
+	if sec > capacityCap {
+		sec = capacityCap
+	}
+	if maxReset > 0 && sec > maxReset {
+		sec = maxReset
+	}
+	if sec <= 0 {
+		return time.Time{}, false
+	}
+	return now.Add(time.Duration(sec * float64(time.Second))), true
+}
+
+// parseMinutesHint extracts N from phrases like "in 5 minutes" / "in 1 minute".
+func parseMinutesHint(lower string) (int, bool) {
+	// lightweight scan without regexp dependency cost for hot path
+	needles := []string{"in ", "after "}
+	for _, p := range needles {
+		idx := strings.Index(lower, p)
+		for idx >= 0 {
+			rest := lower[idx+len(p):]
+			// skip articles
+			rest = strings.TrimPrefix(rest, "a ")
+			rest = strings.TrimPrefix(rest, "an ")
+			rest = strings.TrimSpace(rest)
+			if strings.HasPrefix(rest, "few") {
+				return 5, true
+			}
+			n := 0
+			i := 0
+			for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+				n = n*10 + int(rest[i]-'0')
+				i++
+			}
+			if n > 0 {
+				tail := strings.TrimSpace(rest[i:])
+				if strings.HasPrefix(tail, "minute") {
+					return n, true
+				}
+			}
+			next := strings.Index(lower[idx+len(p):], p)
+			if next < 0 {
+				break
+			}
+			idx = idx + len(p) + next
+		}
+	}
+	return 0, false
 }
 
 // MatchSpendingLimitQuota maps 402 spending-limit to a plugin_auto cooldown,
@@ -133,16 +261,18 @@ func MatchSpendingLimitQuota(in MatchInput) (MatchResult, bool) {
 // buildHumanReason produces a short Chinese/English-mixed summary for UI.
 func buildHumanReason(body, signal string, recoverAt, now time.Time) string {
 	code := extractErrorCode(body)
-	wait := recoverAt.Sub(now).Round(time.Minute)
-	waitH := wait.Hours()
-	waitLabel := wait.String()
-	if waitH >= 1 {
-		waitLabel = fmt.Sprintf("%.0fh", waitH)
+	wait := recoverAt.Sub(now)
+	if wait < 0 {
+		wait = 0
 	}
+	waitLabel := formatWaitLabel(wait)
+	lowerBody := strings.ToLower(body)
 	switch {
-	case code == "subscription:free-usage-exhausted" || strings.Contains(strings.ToLower(body), "free usage") || strings.Contains(strings.ToLower(body), "free-usage"):
+	case signal == "model_capacity" || IsModelCapacityFailure(body):
+		return fmt.Sprintf("模型过载/容量不足，约 %s 后重试 · model_capacity", waitLabel)
+	case code == "subscription:free-usage-exhausted" || strings.Contains(lowerBody, "free usage") || strings.Contains(lowerBody, "free-usage"):
 		return fmt.Sprintf("免费额度用尽(rolling 24h)，约 %s 后可恢复 · %s", waitLabel, codeOrSignal(code, signal))
-	case strings.Contains(strings.ToLower(signal), "rate") || strings.Contains(strings.ToLower(body), "rate limit"):
+	case strings.Contains(strings.ToLower(signal), "rate") || strings.Contains(lowerBody, "rate limit"):
 		return fmt.Sprintf("短时限流，约 %s 后可恢复 · %s", waitLabel, codeOrSignal(code, signal))
 	default:
 		if code != "" {
@@ -150,6 +280,21 @@ func buildHumanReason(body, signal string, recoverAt, now time.Time) string {
 		}
 		return fmt.Sprintf("xAI 短时额度限制，约 %s 后可恢复 · %s", waitLabel, truncate(signal, 80))
 	}
+}
+
+func formatWaitLabel(wait time.Duration) string {
+	if wait >= time.Hour {
+		return fmt.Sprintf("%.0fh", wait.Hours())
+	}
+	mins := int(wait.Round(time.Minute) / time.Minute)
+	if mins < 1 {
+		secs := int(wait.Round(time.Second) / time.Second)
+		if secs < 1 {
+			secs = 1
+		}
+		return fmt.Sprintf("%ds", secs)
+	}
+	return fmt.Sprintf("%dm", mins)
 }
 
 func codeOrSignal(code, signal string) string {
@@ -459,6 +604,9 @@ func isRateLimitType(typ string) bool {
 }
 
 func isRateLimitMessage(msg string) bool {
+	if IsModelCapacityFailure(msg) {
+		return true
+	}
 	lower := strings.ToLower(msg)
 	needles := []string{
 		"rate limit",

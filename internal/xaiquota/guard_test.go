@@ -135,6 +135,26 @@ func TestGuardNeverRecoversUserManual(t *testing.T) {
 	}
 }
 
+func TestTickReconcilesProvisionalCooldownWhenCPAStayedEnabled(t *testing.T) {
+	auth := newMemAuth(AuthFile{AuthIndex: "xp", Name: "xai-pending.json", Provider: "xai", Disabled: false})
+	g, err := NewGuard(Config{Enabled: true, ManagementURL: "http://127.0.0.1:8317", ManagementKey: "test"}, auth, &memLog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.storeUpsert(AccountRecord{
+		AuthIndex: "xp", FileName: "xai-pending.json", Provider: "xai",
+		State: StateAutoDisabled, DisableSource: SourcePluginAuto, Owner: Owner,
+		RecoverAtMS: time.Now().Add(time.Hour).UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	g.Tick()
+	rec := g.storeGet("xp")
+	if rec == nil || rec.State != StateActive || rec.DisableSource != SourceNone {
+		t.Fatalf("reconciled record=%+v", rec)
+	}
+}
+
 func TestGuardSkipsParseFailure(t *testing.T) {
 	auth := newMemAuth(AuthFile{AuthIndex: "x3", Name: "xai-3.json", Provider: "xai", Disabled: false})
 	g, err := NewGuard(Config{
@@ -155,6 +175,60 @@ func TestGuardSkipsParseFailure(t *testing.T) {
 	files, _ := auth.List()
 	if files[0].Disabled {
 		t.Fatal("must not disable when reset parse fails")
+	}
+}
+
+func TestGuardCooldownModelCapacity(t *testing.T) {
+	auth := newMemAuth(AuthFile{AuthIndex: "xcap", Name: "xai-cap.json", Provider: "xai", Disabled: false, Account: "cap@test"})
+	g, err := NewGuard(Config{
+		Enabled:         true,
+		ManagementURL:   "http://127.0.0.1:8317",
+		ManagementKey:   "test",
+		MaxResetSeconds: 86400,
+	}, auth, &memLog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"sequence_number":0,"type":"error","code":null,"message":"The model is currently at capacity due to high demand. Please try again in a few minutes, or use a higher service tier for priority processing: https://docs.x.ai/developers/advanced-api-usage/priority-processing","param":null}`
+	g.HandleUsage(UsageEvent{
+		AuthIndex:  "xcap",
+		Provider:   "xai",
+		Failed:     true,
+		StatusCode: 429,
+		Body:       body,
+	})
+	files, _ := auth.List()
+	if len(files) != 1 || !files[0].Disabled {
+		t.Fatalf("expected soft-disable for capacity, files=%#v", files)
+	}
+	rec := g.storeGet("xcap")
+	if rec == nil || rec.Signal != "model_capacity" {
+		t.Fatalf("record=%#v", rec)
+	}
+	wait := time.Until(time.UnixMilli(rec.RecoverAtMS))
+	if wait < 4*time.Minute || wait > 6*time.Minute {
+		t.Fatalf("capacity wait=%v want ~5m", wait)
+	}
+	// Longer free-usage wait must not be shortened by a later capacity event.
+	_ = g.storeUpsert(AccountRecord{
+		AuthIndex: "xcap", FileName: "xai-cap.json", Provider: "xai", Account: "cap@test",
+		DisableSource: SourcePluginAuto, State: StateAutoDisabled, Owner: Owner,
+		RecoverAtMS: time.Now().Add(12 * time.Hour).UnixMilli(),
+		Signal:      "body.error.code=subscription:free-usage-exhausted",
+		Reason:      "免费额度用尽",
+	})
+	g.HandleUsage(UsageEvent{
+		AuthIndex: "xcap", Provider: "xai", Failed: true, StatusCode: 429, Body: body,
+	})
+	rec2 := g.storeGet("xcap")
+	if rec2 == nil {
+		t.Fatal("missing record after extend")
+	}
+	if time.Until(time.UnixMilli(rec2.RecoverAtMS)) < 10*time.Hour {
+		t.Fatalf("capacity must not shorten free-usage cooldown: recover in %v", time.Until(time.UnixMilli(rec2.RecoverAtMS)))
+	}
+	if rec2.Signal == "model_capacity" {
+		t.Fatalf("must keep free-usage signal, got %q", rec2.Signal)
 	}
 }
 

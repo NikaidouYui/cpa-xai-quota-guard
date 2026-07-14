@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.12
+
+- **SQLite 状态库**：账号所有权、用量、额度快照、动作日志和巡查快照分表持久化（`modernc.org/sqlite`）；默认 `state_path` 改为 `.sqlite`；旧 `.json` 首次启动自动导入，同目录保留 `.migrated.bak`
+- **CPA 禁用复查**：新增手动范围 `patrol/cpa-disabled`（UI「复查 CPA 禁用」）；200 自动启用，429/402 保持禁用并纳入插件追踪，401/403 保持禁用且不删除
+- **模型过载冷却**：识别 `model is currently at capacity` / high demand / priority processing；signal=`model_capacity`，默认约 5 分钟（可解析 “in N minutes”）；**不得缩短**已有 free-usage/spending 更长冷却
+- 处理日志可附带 response body/headers 摘要，便于 UI 下钻
+- 版本号 / registry / 安装文档同步 **0.3.12**
+
 ## 0.3.11
 
 - **日额度池默认**：单账号估算由 **1M → 2M**（`DefaultFreeLimit`）；升级后覆盖 state 里旧的 1M 默认

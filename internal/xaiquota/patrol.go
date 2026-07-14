@@ -2,15 +2,15 @@ package xaiquota
 
 import (
 	"context"
-	"strconv"
-	"runtime"
+	"encoding/json"
 	"fmt"
 	"io"
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,36 +56,36 @@ var SuggestedPatrolModels = []string{
 
 // patrolState tracks the in-progress or last-completed sweep.
 type patrolState struct {
-	mu            sync.Mutex
-	running       bool
-	startedAtMS   int64
-	completedAtMS int64
+	mu              sync.Mutex
+	running         bool
+	startedAtMS     int64
+	completedAtMS   int64
 	totalCandidates int
-	totalProbed   int
-	totalDeleted  int
-	totalErrors   int
-	totalAlive    int
-	totalSkipped  int
-	totalCooldown     int
-	total429CD   int // free-usage 429 cooldown
-	totalSpendCD  int // 402 spending cooldown
-	totalReenabled int
-	byHTTP        map[int]int
-	byAction      map[string]int
-	workers       int // current elastic target
-	workersMax    int // user hard cap
-	workersMin    int
-	load1         float64
-	scaleReason   string
-	lastError     string
-	lastSweepLog  []patrolLogEntry
-	scope         string
-	stopRequested bool
-	lastPersistMS int64
+	totalProbed     int
+	totalDeleted    int
+	totalErrors     int
+	totalAlive      int
+	totalSkipped    int
+	totalCooldown   int
+	total429CD      int // free-usage 429 cooldown
+	totalSpendCD    int // 402 spending cooldown
+	totalReenabled  int
+	byHTTP          map[int]int
+	byAction        map[string]int
+	workers         int // current elastic target
+	workersMax      int // user hard cap
+	workersMin      int
+	load1           float64
+	scaleReason     string
+	lastError       string
+	lastSweepLog    []patrolLogEntry
+	scope           string
+	stopRequested   bool
+	lastPersistMS   int64
 	// sliding window for elastic scaling (timeout/error pressure)
-	winTotal    int
-	winTimeout  int
-	winNetErr   int
+	winTotal   int
+	winTimeout int
+	winNetErr  int
 	// consecutive transport failures → connectivity gate
 	consecutiveNetFails  int
 	connectivityChecking int32 // atomic: 1 while gate runs
@@ -98,7 +98,6 @@ type patrolState struct {
 // patrolLogEntry is an alias of durable PatrolLogEntry.
 type patrolLogEntry = PatrolLogEntry
 
-
 // PatrolStatus is the JSON view for the UI.
 type PatrolStatus struct {
 	Running         bool             `json:"running"`
@@ -110,7 +109,7 @@ type PatrolStatus struct {
 	TotalErrors     int              `json:"total_errors"`
 	TotalAlive      int              `json:"total_alive"`
 	TotalSkipped    int              `json:"total_skipped"`
-	TotalCooldown       int              `json:"total_cooldown"`
+	TotalCooldown   int              `json:"total_cooldown"`
 	Total429CD      int              `json:"total_429_cooldown"`
 	TotalSpendCD    int              `json:"total_402_cooldown"`
 	TotalReenabled  int              `json:"total_reenabled"`
@@ -188,16 +187,16 @@ func isCLIVersionRejected(statusCode int, body string) bool {
 	return strings.Contains(lower, "cli version") && strings.Contains(lower, "outdated")
 }
 
-
 // probeResult holds the outcome of probing one credential.
 type probeResult struct {
 	authIndex string
 	fileName  string
 	account   string
-	action    string // alive|deleted|error|cooldown|cooldown_skip|reenabled|net_*|probe_*|region_block|cli_version
+	action    string // alive|deleted|error|cooldown|cooldown_skip|reenabled*|external_invalid|net_*|probe_*|region_block|cli_version
 	reason    string
 	httpCode  int
 	modelUsed string
+	body      string // last HTTP response body (for durable action_history drill-down)
 }
 
 // isTransportNetFail reports probe outcomes that indicate local/path network issues
@@ -230,14 +229,14 @@ func isTransportNetFail(action string, httpCode int) bool {
 
 // ConnectivityReport is the result of internet + proxy health probes.
 type ConnectivityReport struct {
-	InternetOK    bool   `json:"internet_ok"`
-	InternetDetail string `json:"internet_detail,omitempty"`
-	ProxyConfigured bool `json:"proxy_configured"`
-	ProxyOK       bool   `json:"proxy_ok"`
-	ProxyDetail   string `json:"proxy_detail,omitempty"`
+	InternetOK      bool   `json:"internet_ok"`
+	InternetDetail  string `json:"internet_detail,omitempty"`
+	ProxyConfigured bool   `json:"proxy_configured"`
+	ProxyOK         bool   `json:"proxy_ok"`
+	ProxyDetail     string `json:"proxy_detail,omitempty"`
 	// Abort is true when any required path is down.
-	Abort         bool   `json:"abort"`
-	Message       string `json:"message,omitempty"`
+	Abort   bool   `json:"abort"`
+	Message string `json:"message,omitempty"`
 }
 
 // checkURLReachable issues a short GET/HEAD to urlStr via client.
@@ -345,12 +344,13 @@ func runConnectivityGate(proxyURL string) ConnectivityReport {
 }
 
 // classifyNetworkProbe maps transport failures into synthetic http buckets for stats/UI:
-//   0  = generic network
-//  -1  = timeout / deadline
-//  -2  = context canceled / client abort
-//  -3  = DNS / resolve failure
-//  -4  = TLS / certificate
-//  -5  = connection refused / dial
+//
+//	 0  = generic network
+//	-1  = timeout / deadline
+//	-2  = context canceled / client abort
+//	-3  = DNS / resolve failure
+//	-4  = TLS / certificate
+//	-5  = connection refused / dial
 func classifyNetworkProbe(err error) (httpCode int, reason string) {
 	if err == nil {
 		return 0, "network error"
@@ -415,14 +415,13 @@ func probeErrorKind(httpCode int, reason string) string {
 	return "error"
 }
 
-
 // PatrolOptions controls one sweep.
 type PatrolOptions struct {
 	// Scope: ""/"all" = enabled xAI only;
 	// "spending_only" = plugin_auto disabled cooldowns only (no enabled accounts).
+	// "cpa_disabled" = disabled xAI without plugin ownership, manually requested only.
 	Scope string `json:"scope"`
 }
-
 
 // clampPatrolUserMax normalizes the user-configured hard upper bound.
 func clampPatrolUserMax(userMax int) int {
@@ -725,6 +724,7 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 	}
 	// all: ONLY currently-enabled xAI credentials (skip any disabled, including cooldowns)
 	// spending_only / cooldown recheck: ONLY plugin_auto owned disabled cooldowns
+	// cpa_disabled: ONLY CPA-disabled credentials without plugin/manual ownership
 	//   (429 free-usage + 402 spending_limit); never probe still-enabled accounts
 	candidates := make([]AuthFile, 0, len(files))
 	for _, f := range files {
@@ -746,6 +746,11 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 		case "spending_only":
 			// button: 仅复核冷却号 — disabled cool-down accounts only
 			if f.Disabled && isPluginCool {
+				candidates = append(candidates, f)
+			}
+		case "cpa_disabled":
+			isManual := live != nil && (live.State == StateUserManualDisabled || live.DisableSource == SourceUserManual || live.PreDisabled)
+			if f.Disabled && !isPluginCool && !isManual {
 				candidates = append(candidates, f)
 			}
 		default: // all / full patrol
@@ -945,7 +950,7 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 					}
 				}
 			got:
-				result := g.probeOneCredential(f, authDir, client)
+				result := g.probeOneCredential(f, authDir, client, scope)
 				g.recordProbeResult(result)
 				// release permit (keep pool size = permitCur)
 				select {
@@ -969,7 +974,6 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 
 	return g.PatrolStatus()
 }
-
 
 // patrolConnectivityAbortGate runs after consecutive transport failures.
 // If internet or configured proxy is unhealthy, stop the sweep and surface last_error.
@@ -1130,7 +1134,7 @@ func (g *Guard) recordProbeResult(r probeResult) {
 		"probe_http_4xx", "probe_http_5xx", "probe_unprocessable", "region_block", "cli_version",
 		"patrol_abort_net":
 		g.patrol.totalErrors++
-	case "cooldown_skip":
+	case "cooldown_skip", "external_invalid":
 		g.patrol.totalSkipped++
 	case "cooldown":
 		g.patrol.totalCooldown++
@@ -1139,7 +1143,7 @@ func (g *Guard) recordProbeResult(r probeResult) {
 		} else if r.httpCode == http.StatusPaymentRequired {
 			g.patrol.totalSpendCD++
 		}
-	case "reenabled":
+	case "reenabled", "reenabled_external":
 		g.patrol.totalReenabled++
 		g.patrol.totalAlive++
 	case "alive":
@@ -1177,7 +1181,7 @@ func (g *Guard) recordProbeResult(r probeResult) {
 
 	// Persist material actions into durable action_history (survives restart).
 	switch entry.Action {
-	case "deleted", "cooldown", "reenabled", "error",
+	case "deleted", "cooldown", "reenabled", "reenabled_external", "external_invalid", "error",
 		"net_timeout", "net_canceled", "net_dns", "net_tls", "net_connect", "net_error",
 		"probe_http_4xx", "probe_http_5xx", "probe_unprocessable", "region_block", "cli_version",
 		"patrol_abort_net":
@@ -1186,6 +1190,7 @@ func (g *Guard) recordProbeResult(r probeResult) {
 				TimeMS: entry.TimeMS, Action: entry.Action, Source: "patrol",
 				AuthIndex: r.authIndex, FileName: r.fileName, Account: r.account,
 				HTTPCode: r.httpCode, Reason: r.reason,
+				Provider: "xai", Model: r.modelUsed, Body: r.body,
 			})
 		}
 	}
@@ -1199,7 +1204,14 @@ func (g *Guard) recordProbeResult(r probeResult) {
 }
 
 // probeOneCredential reads the auth file, extracts token, sends a minimal probe.
-func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Client) probeResult {
+func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Client, scope string) (r probeResult) {
+	var lastBody string
+	defer func() {
+		// Attach last HTTP body for action-log drill-down when caller forgot to set r.body.
+		if r.body == "" && lastBody != "" {
+			r.body = truncate(lastBody, actionBodyMax)
+		}
+	}()
 	filePath := filepath.Join(authDir, f.Name)
 	raw, err := os.ReadFile(filePath)
 	if err != nil {
@@ -1248,6 +1260,7 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 	probeHeaders := mergeProbeHeaders(af.Headers)
 
 	cfgProbe := g.Config()
+	externalReview := scope == "cpa_disabled" && f.Disabled
 	primary := strings.TrimSpace(cfgProbe.PatrolModel)
 	if primary == "" {
 		primary = DefaultPatrolModel
@@ -1282,11 +1295,11 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 	}
 
 	var (
-		code     int
-		bodyStr  string
-		model    string
-		lastErr  string
-		tried    []string
+		code    int
+		bodyStr string
+		model   string
+		lastErr string
+		tried   []string
 	)
 	for _, m := range tryModels {
 		model = m
@@ -1315,8 +1328,8 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 				if netCode == -2 || attempt == maxNetAttempts {
 					return probeResult{
 						authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-						action: probeErrorKind(netCode, netReason),
-						reason: fmt.Sprintf("probe network model=%s attempts=%d: %s", m, attempt, netReason),
+						action:   probeErrorKind(netCode, netReason),
+						reason:   fmt.Sprintf("probe network model=%s attempts=%d: %s", m, attempt, netReason),
 						httpCode: netCode, modelUsed: m,
 					}
 				}
@@ -1336,12 +1349,13 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 			netCode, netReason := classifyNetworkProbe(err)
 			return probeResult{
 				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-				action: probeErrorKind(netCode, netReason),
-				reason: fmt.Sprintf("probe network model=%s: %s", m, netReason),
+				action:   probeErrorKind(netCode, netReason),
+				reason:   fmt.Sprintf("probe network model=%s: %s", m, netReason),
 				httpCode: netCode, modelUsed: m,
 			}
 		}
 		code, bodyStr = c, b
+		lastBody = bodyStr
 		// Success / free-window 429: stop model tries (classified below)
 		if code == http.StatusOK || code == http.StatusTooManyRequests {
 			break
@@ -1402,78 +1416,124 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 		}
 	}
 
+	if code == http.StatusOK && externalReview {
+		if g.auth == nil {
+			return probeResult{authIndex: f.AuthIndex, fileName: f.Name, account: f.Account, action: "error", reason: "CPA 禁用复查恢复失败: auth lookup nil", httpCode: code, modelUsed: model}
+		}
+		if _, err := g.auth.SetDisabled(f.AuthIndex, false); err != nil {
+			return probeResult{authIndex: f.AuthIndex, fileName: f.Name, account: f.Account, action: "error", reason: fmt.Sprintf("CPA 禁用复查恢复失败: %v", err), httpCode: code, modelUsed: model}
+		}
+		if live != nil {
+			_ = g.storeMarkActive(f.AuthIndex)
+		}
+		g.logf("info", "patrol CPA 禁用账号探测有效，已启用 auth=%s model=%s", f.AuthIndex, model)
+		return probeResult{authIndex: f.AuthIndex, fileName: f.Name, account: f.Account, action: "reenabled_external", reason: fmt.Sprintf("CPA 禁用复查 200 OK · model=%s", model), httpCode: code, modelUsed: model}
+	}
 	if code == http.StatusOK {
 		return reenableIfSpending("200 OK")
 	}
-	if code == http.StatusTooManyRequests {
-		// 429 never deletes.
-		// spending_limit cooldown + 429 => credential still valid for free path => re-enable
-		// free-usage short window on enabled account => plugin_auto cooldown (same as HandleUsage)
-		if live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
+	// 429 / model-capacity (also 503/529 with capacity body): soft cooldown, never delete.
+	capacityHit := IsModelCapacityFailure(bodyStr)
+	if code == http.StatusTooManyRequests || (capacityHit && isCapacityEligibleStatus(code) && code != http.StatusOK) {
+		// spending_limit cooldown + 429 free path still valid => re-enable
+		// model_capacity is temporary overload — does NOT prove free-tier is usable; skip re-enable.
+		if !capacityHit && live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
 			live.Signal == "spending_limit" && live.Owner == Owner && !live.PreDisabled {
 			return reenableIfSpending("429 rate-limited (free quota window; not spending-limit)")
 		}
-		match429, ok429 := MatchShortWindowQuota(MatchInput{
+		matchSW, okSW := MatchShortWindowQuota(MatchInput{
 			Provider: "xai", Failed: true, StatusCode: code, Body: bodyStr, Now: time.Now(),
 			MaxResetSeconds: g.Config().MaxResetSeconds,
 		})
-		if !ok429 {
+		if !okSW {
 			return probeResult{
 				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-				action: "error", reason: fmt.Sprintf("429 未识别为短时额度信号 model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
+				action: "error", reason: fmt.Sprintf("%d 未识别为短时额度/容量信号 model=%s · %s", code, model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
 			}
 		}
 		if actual, limit, pok := ParseFreeUsageTokens(bodyStr); pok {
 			_ = g.storeObserveQuota(f.AuthIndex, actual, limit)
 		}
-		// Already our free-usage / short-window cooldown → extend (not spending_limit).
+		// Already our plugin_auto cooldown → extend without shortening longer free-usage/spending waits.
 		if live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
 			live.Owner == Owner && !live.PreDisabled && live.Signal != "spending_limit" {
 			rec := *live
-			rec.RecoverAtMS = match429.RecoverAt.UnixMilli()
+			newRecoverMS := matchSW.RecoverAt.UnixMilli()
+			if rec.RecoverAtMS > newRecoverMS {
+				newRecoverMS = rec.RecoverAtMS
+			}
+			rec.RecoverAtMS = newRecoverMS
 			rec.LastProbeModel = model
-			rec.Reason = match429.Reason
-			rec.Signal = match429.Signal
+			rec.Signal, rec.Reason = mergeCooldownSignal(rec.Signal, rec.Reason, matchSW.Signal, matchSW.Reason, newRecoverMS == matchSW.RecoverAt.UnixMilli())
 			_ = g.storeUpsert(rec)
 			return probeResult{
 				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-				action: "cooldown", reason: fmt.Sprintf("429 free-usage 延长冷却 model=%s · %s", model, match429.Reason), httpCode: code, modelUsed: model,
+				action: "cooldown", reason: fmt.Sprintf("短时冷却延长 model=%s · %s", model, rec.Reason), httpCode: code, modelUsed: model,
+			}
+		}
+		// spending_limit account hit capacity: keep disabled, only bump recover soft bound.
+		if live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
+			live.Signal == "spending_limit" && live.Owner == Owner && !live.PreDisabled {
+			rec := *live
+			if matchSW.RecoverAt.UnixMilli() > rec.RecoverAtMS {
+				rec.RecoverAtMS = matchSW.RecoverAt.UnixMilli()
+			}
+			rec.LastProbeModel = model
+			_ = g.storeUpsert(rec)
+			return probeResult{
+				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+				action: "cooldown", reason: fmt.Sprintf("spending_limit 保持冷却(叠加容量) model=%s · %s", model, matchSW.Reason), httpCode: code, modelUsed: model,
+			}
+		}
+		nowMS := time.Now().UnixMilli()
+		newRec := AccountRecord{
+			AuthIndex: f.AuthIndex, FileName: f.Name, Provider: "xai", Account: f.Account,
+			DisableSource: SourcePluginAuto, State: StateAutoDisabled,
+			RecoverAtMS: matchSW.RecoverAt.UnixMilli(), DisabledAtMS: nowMS,
+			LastProbeModel: model,
+			PreDisabled:    false, Owner: Owner, Reason: matchSW.Reason, Signal: matchSW.Signal,
+		}
+		if err := g.storeUpsert(newRec); err != nil {
+			return probeResult{authIndex: f.AuthIndex, fileName: f.Name, account: f.Account, action: "error", reason: fmt.Sprintf("cooldown state persist failed: %v", err), httpCode: code, modelUsed: model}
+		}
+		rollbackState := func() {
+			if live != nil {
+				_ = g.storeUpsert(*live)
+			} else {
+				_ = g.storeRemove(f.AuthIndex)
 			}
 		}
 		if g.auth != nil && !f.Disabled {
 			prev, err := g.auth.SetDisabled(f.AuthIndex, true)
 			if err != nil {
+				rollbackState()
 				return probeResult{
 					authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-					action: "error", reason: fmt.Sprintf("429 cooldown disable failed: %v", err), httpCode: code, modelUsed: model,
+					action: "error", reason: fmt.Sprintf("cooldown disable failed: %v", err), httpCode: code, modelUsed: model,
 				}
 			}
 			if prev {
+				rollbackState()
 				return probeResult{
 					authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-					action: "cooldown_skip", reason: "already disabled externally (429)", httpCode: code, modelUsed: model,
+					action: "cooldown_skip", reason: "already disabled externally", httpCode: code, modelUsed: model,
 				}
 			}
 		}
-		nowMS := time.Now().UnixMilli()
-		_ = g.storeUpsert(AccountRecord{
-			AuthIndex: f.AuthIndex, FileName: f.Name, Provider: "xai", Account: f.Account,
-			DisableSource: SourcePluginAuto, State: StateAutoDisabled,
-			RecoverAtMS: match429.RecoverAt.UnixMilli(), DisabledAtMS: nowMS,
-			LastProbeModel: model,
-			PreDisabled: false, Owner: Owner, Reason: match429.Reason, Signal: match429.Signal,
-		})
-		g.logf("warn", "patrol 429 free-usage 已冷却 auth=%s recover_at=%s model=%s", f.AuthIndex, match429.RecoverAt.Format(time.RFC3339), model)
-		g.NotifyWebhook("patrol_free_usage_cooldown", map[string]any{
+		label := "free-usage"
+		if matchSW.Signal == "model_capacity" {
+			label = "model_capacity"
+		}
+		g.logf("warn", "patrol %s 已冷却 auth=%s recover_at=%s model=%s", label, f.AuthIndex, matchSW.RecoverAt.Format(time.RFC3339), model)
+		g.NotifyWebhook("patrol_short_window_cooldown", map[string]any{
 			"auth_index": f.AuthIndex, "file_name": f.Name, "account": f.Account,
-			"http_code": code, "recover_at": match429.RecoverAt.Format(time.RFC3339), "model": model,
+			"http_code": code, "recover_at": matchSW.RecoverAt.Format(time.RFC3339), "model": model, "signal": matchSW.Signal,
 		})
 		return probeResult{
 			authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-			action: "cooldown", reason: fmt.Sprintf("429 free-usage model=%s · %s", model, match429.Reason), httpCode: code, modelUsed: model,
+			action: "cooldown", reason: fmt.Sprintf("%s model=%s · %s", label, model, matchSW.Reason), httpCode: code, modelUsed: model,
 		}
 	}
-
 
 	if IsSpendingLimitBlocked(code, bodyStr) {
 		// Soft-disable only (distinct signal from 429 free-usage).
@@ -1501,16 +1561,36 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 				action: "cooldown", reason: fmt.Sprintf("spending-limit still active model=%s tried=%v", model, tried), httpCode: code, modelUsed: model,
 			}
 		}
+		nowMS := time.Now().UnixMilli()
+		newRec := AccountRecord{
+			AuthIndex: f.AuthIndex, FileName: f.Name, Provider: "xai", Account: f.Account,
+			DisableSource: SourcePluginAuto, State: StateAutoDisabled,
+			RecoverAtMS: match.RecoverAt.UnixMilli(), DisabledAtMS: nowMS,
+			LastProbeModel: model,
+			PreDisabled:    false, Owner: Owner, Reason: match.Reason, Signal: match.Signal,
+		}
+		if err := g.storeUpsert(newRec); err != nil {
+			return probeResult{authIndex: f.AuthIndex, fileName: f.Name, account: f.Account, action: "error", reason: fmt.Sprintf("spending state persist failed: %v", err), httpCode: code, modelUsed: model}
+		}
+		rollbackState := func() {
+			if live != nil {
+				_ = g.storeUpsert(*live)
+			} else {
+				_ = g.storeRemove(f.AuthIndex)
+			}
+		}
 		// Disable if currently enabled.
 		if g.auth != nil && !f.Disabled {
 			prev, err := g.auth.SetDisabled(f.AuthIndex, true)
 			if err != nil {
+				rollbackState()
 				return probeResult{
 					authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
 					action: "error", reason: fmt.Sprintf("disable failed: %v", err), httpCode: code,
 				}
 			}
 			if prev {
+				rollbackState()
 				// External disable → do not own.
 				return probeResult{
 					authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
@@ -1518,14 +1598,6 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 				}
 			}
 		}
-		nowMS := time.Now().UnixMilli()
-		_ = g.storeUpsert(AccountRecord{
-			AuthIndex: f.AuthIndex, FileName: f.Name, Provider: "xai", Account: f.Account,
-			DisableSource: SourcePluginAuto, State: StateAutoDisabled,
-			RecoverAtMS: match.RecoverAt.UnixMilli(), DisabledAtMS: nowMS,
-			LastProbeModel: model,
-			PreDisabled: false, Owner: Owner, Reason: match.Reason, Signal: match.Signal,
-		})
 		g.logf("warn", "patrol spending-limit 已禁用 auth=%s recover_at=%s", f.AuthIndex, match.RecoverAt.Format(time.RFC3339))
 		g.NotifyWebhook("patrol_spending_disable", map[string]any{
 			"auth_index": f.AuthIndex, "file_name": f.Name, "account": f.Account,
@@ -1543,6 +1615,12 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 		}
 	}
 	if IsPermissionDenied(code, bodyStr) || IsInvalidCredentials(code, bodyStr) {
+		if externalReview {
+			return probeResult{
+				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+				action: "external_invalid", reason: fmt.Sprintf("CPA 禁用复查确认凭证失效，保持禁用且不接管 model=%s · %s", model, truncate(bodyStr, 180)), httpCode: code, modelUsed: model,
+			}
+		}
 		if err := g.auth.Delete(f.AuthIndex); err != nil {
 			return probeResult{
 				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
@@ -1600,7 +1678,6 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 		action: "alive", reason: fmt.Sprintf("HTTP %d model=%s", code, model), httpCode: code, modelUsed: model,
 	}
 }
-
 
 // persistPatrolSnapshot writes current in-memory patrol counters/log to durable state.
 // final=true forces write even if recently checkpointed.
@@ -1745,7 +1822,7 @@ func (g *Guard) PatrolStatusWith(opts PatrolStatusOpts) PatrolStatus {
 		TotalErrors:     g.patrol.totalErrors,
 		TotalAlive:      g.patrol.totalAlive,
 		TotalSkipped:    g.patrol.totalSkipped,
-		TotalCooldown:      g.patrol.totalCooldown,
+		TotalCooldown:   g.patrol.totalCooldown,
 		Total429CD:      g.patrol.total429CD,
 		TotalSpendCD:    g.patrol.totalSpendCD,
 		TotalReenabled:  g.patrol.totalReenabled,
@@ -1805,7 +1882,6 @@ func selectPatrolLogForUI(src []patrolLogEntry, limit int) []patrolLogEntry {
 	return out
 }
 
-
 // requestPatrolStop marks stop and cancels in-flight probe HTTP so workers exit quickly.
 func (g *Guard) requestPatrolStop() {
 	g.patrol.mu.Lock()
@@ -1852,6 +1928,24 @@ func (g *Guard) PatrolRunSpendingOnly() PatrolStatus {
 	return g.PatrolStatus()
 }
 
+func (g *Guard) PatrolRunCPADisabled() PatrolStatus {
+	g.patrol.mu.Lock()
+	if g.patrol.running {
+		g.patrol.mu.Unlock()
+		return g.PatrolStatus()
+	}
+	g.patrol.mu.Unlock()
+	go g.PatrolSweep(PatrolOptions{Scope: "cpa_disabled"})
+	for i := 0; i < 20; i++ {
+		time.Sleep(25 * time.Millisecond)
+		st := g.PatrolStatus()
+		if st.Running || st.CompletedAtMS > 0 {
+			return st
+		}
+	}
+	return g.PatrolStatus()
+}
+
 func (g *Guard) PatrolRunOnce() PatrolStatus {
 	g.patrol.mu.Lock()
 	if g.patrol.running {
@@ -1872,8 +1966,6 @@ func (g *Guard) PatrolRunOnce() PatrolStatus {
 	}
 	return g.PatrolStatus()
 }
-
-
 
 // doChatProbe sends a minimal upstream probe for the given model.
 // Prefer CPA/xAI executor path POST /responses (Grok CLI chat-proxy + api.x.ai);
@@ -2102,4 +2194,3 @@ func (g *Guard) listModelsForTokenWithClient(client *http.Client, token, baseURL
 	}
 	return models, "credential", ""
 }
-

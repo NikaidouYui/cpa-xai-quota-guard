@@ -5,7 +5,7 @@
 
 **仓库**：[https://github.com/NikaidouYui/cpa-xai-quota-guard](https://github.com/NikaidouYui/cpa-xai-quota-guard)  
 **协议**：MIT  
-**当前版本**：`0.3.11`  
+**当前版本**：`0.3.12`  
 **形态**：CLIProxyAPI / CPA **c-shared 原生插件**（不是油猴、不是独立旁路服务）
 
 ---
@@ -119,7 +119,7 @@ plugins:
       enabled: true
       management_url: "http://127.0.0.1:8317"
       management_key: "<CPA_MANAGEMENT_KEY>"
-      state_path: "data/cpa-xai-quota-guard-state.json"
+      state_path: "data/cpa-xai-quota-guard-state.sqlite"
       patrol_enabled: false
       patrol_interval: 3600
       patrol_auth_dir: "/root/.cli-proxy-api"
@@ -138,6 +138,7 @@ plugins:
 - **0.3.6** 删除插件自有深色模式，跟随 CPA/CPAMP 主题  
 - **0.3.10** 商店安装 502 修复（版本化 zip + 根目录库 + checksums）  
 - **0.3.11** 日额度池默认 1M→2M；CI 商店兼容打包落地  
+- **0.3.12** SQLite 状态库；CPA 禁用复查；model_capacity 短冷却  
 
 完整记录：[CHANGELOG.md](https://github.com/NikaidouYui/cpa-xai-quota-guard/blob/main/CHANGELOG.md)
 
@@ -186,4 +187,4 @@ Star / Issue / PR 都欢迎。
 
 ---
 
-*本帖描述基于仓库 `0.3.11`；功能以 GitHub README 与 CHANGELOG 为准。*
+*本帖描述基于仓库 `0.3.12`；功能以 GitHub README 与 CHANGELOG 为准。*

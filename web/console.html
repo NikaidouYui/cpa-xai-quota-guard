@@ -105,7 +105,7 @@ button.off:hover{background:var(--btn-off-hover)}
 .status-dot.off{background:var(--err);box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 25%,transparent)}
 .badge.muted{background:var(--chip);color:var(--muted);border-color:var(--border)}
 .grid{display:grid;gap:1rem}
-.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;box-shadow:0 1px 3px var(--shadow)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;box-shadow:0 1px 3px var(--shadow);min-width:0}
 .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
 .stats-wrap{display:grid;gap:.85rem;margin-top:.9rem}
 .stats-group{background:linear-gradient(180deg,var(--card2) 0%,var(--card) 100%);border:1px solid var(--border);border-radius:12px;padding:.7rem .75rem .85rem}
@@ -114,10 +114,19 @@ button.off:hover{background:var(--btn-off-hover)}
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65rem}
 @media (max-width:960px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:560px){
-body{padding:.75rem}
+body{padding:.6rem}
 .stats{grid-template-columns:1fr}
-
+.card{padding:.8rem}
 .row button,.row .btn{flex:1 1 auto}
+.patrol-status-wrap{flex-basis:100%;min-width:0}
+#patrolCard #patrolBtn,#patrolCard #patrolSpendBtn{flex:1 1 calc(50% - .35rem)}
+#patrolCard #patrolCPADisabledBtn{flex:1 1 100%}
+.acc-toolbar>*{min-width:0!important}
+.acc-toolbar #accFilter,.acc-toolbar #accSearch{flex:1 1 100%;width:100%}
+.acc-toolbar #accPageSize{flex:1 1 auto;width:auto}
+#actionLogCard>.row select,#actionLogCard>.row input{min-width:0!important;flex:1 1 calc(50% - .25rem)}
+#actionLogCard>.row #logSearch{flex-basis:100%}
+.log-scroll,.acc-table-wrap{max-width:100%;overflow:auto}
 .acc-table-wrap{height:min(60vh,520px);max-height:min(60vh,520px)}
 #actionLogBox,#patrolLogBox{max-height:220px}
 h1{font-size:1.1rem}
@@ -213,6 +222,21 @@ label > span.lbl{display:block;margin-bottom:.15rem;color:var(--muted);font-size
 .log-panel[hidden],.prog-panel[hidden]{display:none!important}
 .log-scroll{max-height:200px;overflow-y:auto;font-size:.78rem;border:1px solid var(--border);border-radius:8px;background:var(--card)}
 #actionLogBox.log-scroll{max-height:240px}
+.reason-link{color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.reason-link:hover{color:var(--accent2);text-decoration-color:var(--accent2)}
+.reason-link.muted-link{color:var(--muted);text-decoration-style:dashed}
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.48);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(2px)}
+.modal-backdrop[hidden]{display:none!important}
+.modal-panel{width:min(720px,100%);max-height:min(82vh,720px);background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.85rem 1rem;border-bottom:1px solid var(--border);background:var(--card2)}
+.modal-head h3{margin:0;font-size:.98rem;font-weight:650}
+.modal-body{padding:.9rem 1rem 1.05rem;overflow:auto;font-size:.84rem;line-height:1.45}
+.modal-dl{display:grid;grid-template-columns:110px 1fr;gap:.35rem .65rem;margin:0 0 .85rem}
+.modal-dl dt{color:var(--muted);font-size:.76rem;font-weight:600}
+.modal-dl dd{margin:0;word-break:break-word;font-variant-numeric:tabular-nums}
+.modal-pre{margin:0;padding:.65rem .75rem;background:var(--soft);border:1px solid var(--border);border-radius:8px;overflow:auto;max-height:240px;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.78rem;line-height:1.4}
+.modal-sec{margin-top:.75rem}
+.modal-sec h4{margin:0 0 .35rem;font-size:.78rem;color:var(--muted);font-weight:650;letter-spacing:.02em}
 .grid{gap:.75rem}
 #patrolCard .card-desc{margin-bottom:.45rem}
 #patrolHttpStats:empty{display:none}
@@ -326,7 +350,7 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
   </div>
   <div class="card" id="patrolCard">
     <div class="row" style="justify-content:space-between;gap:.5rem;margin-bottom:.35rem">
-      <div><div class="card-title">主动巡查</div><div class="card-desc" id="patrolHint">全量只扫「已启用」；仅复核只扫「程序自动冷却」。并发在用户上限内按负载/探测健康弹性伸缩。</div></div>
+      <div><div class="card-title">主动巡查</div><div class="card-desc" id="patrolHint">全量扫已启用；冷却复核扫程序冷却；CPA 禁用复查仅手动触发，200 恢复，429/402 纳入追踪。</div></div>
     </div>
     <div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
       <label style="display:flex;align-items:center;gap:.3rem;font-size:.85rem">
@@ -374,6 +398,7 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
     <div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
       <button id="patrolBtn" class="warn" onclick="patrolStart()" title="全量：只扫当前启用中的 xAI（跳过全部已禁用，含冷却号）">全量巡查</button>
       <button id="patrolSpendBtn" class="primary" onclick="patrolSpendingStart()" title="仅复核：只扫 plugin_auto 已禁用冷却号（429 free-usage 与 402 spending；不含启用中）">仅复查冷却号</button>
+      <button id="patrolCPADisabledBtn" onclick="patrolCPADisabledStart()" title="手动复查 CPA 禁用且无插件所有权的账号；200 恢复，429/402 保持禁用并纳入追踪，401/403 保持禁用且不删除">复查 CPA 禁用</button>
       <button id="patrolStopBtn" class="off" onclick="patrolStop()" style="display:none">停止巡查</button>
       <div class="patrol-status-wrap"><span id="patrolStatus" class="muted" style="font-size:.84rem">空闲</span><span id="patrolStatusLine2"></span></div>
     </div>
@@ -406,7 +431,7 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
   </div>
   <div class="card" id="actionLogCard">
     <div class="row" style="justify-content:space-between;gap:.5rem;margin-bottom:.35rem;flex-wrap:wrap">
-      <div><div class="card-title">处理日志</div><div class="card-desc">被动额度事件 + 巡查动作 · 最多显示 80 条 · 与上方探测日志分开</div></div>
+      <div><div class="card-title">处理日志</div><div class="card-desc">被动额度事件 + 巡查动作 · 最多显示 80 条 · 点击「说明」可查看请求响应快照（body/headers）</div></div>
     </div>
     <div class="row" style="gap:.45rem;flex-wrap:wrap;margin-bottom:.4rem;align-items:center">
       <select id="logFilterSrc" onchange="onActionLogFilter()" style="min-width:110px">
@@ -439,6 +464,18 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
         </tr></thead>
         <tbody id="actionLogBody"><tr><td colspan="7" class="muted" style="padding:.5rem">加载中…</td></tr></tbody>
       </table>
+    </div>
+  </div>
+  <div id="actionDetailModal" class="modal-backdrop" hidden onclick="if(event.target===this)closeActionDetail()">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="actionDetailTitle">
+      <div class="modal-head">
+        <h3 id="actionDetailTitle">处理详情</h3>
+        <div class="row" style="gap:.4rem">
+          <button type="button" id="actionDetailCopyBtn" onclick="copyActionDetail()">复制 JSON</button>
+          <button type="button" class="primary" onclick="closeActionDetail()">关闭</button>
+        </div>
+      </div>
+      <div class="modal-body" id="actionDetailBody"></div>
     </div>
   </div>
   <div class="card">
@@ -878,10 +915,13 @@ function humanReason(a){
   const sk = signalKind(signal + " " + raw);
   if(sk === "spending" && (!raw || raw.trim().startsWith("{"))) return "402 积分/订阅耗尽（冷却不删，巡查可恢复）";
   if(sk === "free" && (!raw || raw.trim().startsWith("{"))) return "429 免费额度用尽（rolling 24h，到期自动恢复）";
+  if(sk === "capacity" && (!raw || raw.trim().startsWith("{"))) return "模型过载/容量不足（短冷却约数分钟，非额度耗尽）";
   if(sk === "region") return "区域/模型不可用（不删凭证）";
   // already human-friendly
   if(raw && !raw.trim().startsWith("{") && raw.indexOf("免费额度")>=0) return raw;
+  if(raw && !raw.trim().startsWith("{") && (raw.indexOf("模型过载")>=0 || raw.indexOf("容量不足")>=0)) return raw;
   if(raw && !raw.trim().startsWith("{") && raw.indexOf("后可恢复")>=0) return raw;
+  if(raw && !raw.trim().startsWith("{") && raw.indexOf("后重试")>=0) return raw;
   let code = "";
   let errText = "";
   try {
@@ -901,6 +941,7 @@ function humanReason(a){
   if(/permission-denied|permission_denied/i.test(raw+signal)) return "权限拒绝（请核对是否区域问题）";
   if(/invalid or expired credentials|no auth context|invalid_grant|refresh token has been revoked/i.test(raw+signal)) return "凭证失效/已吊销（将删除账号）";
   if(/spending-limit|run out of credits|personal-team-blocked|spending_limit/i.test(raw+signal)) return "积分/订阅耗尽（程序冷却，巡查恢复后启用）";
+  if(/at capacity|high demand|priority processing|model_capacity|higher service tier/i.test(raw+signal+errText)) return "模型过载/容量不足（短冷却，非额度耗尽）";
   if(code) return "xAI 限制: " + code;
   if(signal) return signal.replace(/^body\.error\.code=/, "错误码: ");
   if(errText) return errText.slice(0, 80);
@@ -910,6 +951,7 @@ function humanReason(a){
 function patrolActionLabel(a){
   var m = {
     deleted:"已删除", alive:"存活", error:"错误", cooldown:"冷却禁用", cooldown_skip:"跳过", reenabled:"已恢复启用",
+    reenabled_external:"CPA禁用已恢复", external_invalid:"CPA禁用失效",
     net_timeout:"网络超时", net_canceled:"请求取消", net_dns:"DNS失败", net_tls:"TLS失败", net_connect:"连接失败", net_error:"网络异常",
     patrol_abort_net:"网络中止",
     probe_http_4xx:"探测4xx", probe_http_5xx:"探测5xx", probe_unprocessable:"422体错误", region_block:"区域/模型不可用", cli_version:"CLI版本被拒"
@@ -936,6 +978,7 @@ function signalKind(sig){
   const s = String(sig||"");
   if(!s) return "";
   if(/spending-limit|spending_limit|run out of credits|personal-team-blocked/i.test(s)) return "spending";
+  if(/model_capacity|at capacity|high demand|priority processing|higher service tier/i.test(s)) return "capacity";
   if(/free-usage|free_usage|short_window|subscription:free/i.test(s)) return "free";
   if(/permission-denied|chat endpoint/i.test(s)) return "perm";
   if(/invalid|expired|no auth context/i.test(s)) return "auth";
@@ -945,6 +988,7 @@ function signalKind(sig){
 function signalLabel(sig){
   const k = signalKind(sig);
   if(k==="spending") return "402 积分/订阅";
+  if(k==="capacity") return "模型容量/过载";
   if(k==="free") return "429 免费额度";
   if(k==="perm") return "403 权限";
   if(k==="auth") return "401 凭证";
@@ -956,7 +1000,7 @@ function signalLabel(sig){
 function signalTag(sig){
   const k = signalKind(sig);
   if(!k) return '<span class="muted">—</span>';
-  const cls = k==="spending" ? "tag auto" : k==="free" ? "tag due" : k==="perm"||k==="auth" ? "tag manual" : "tag cpa";
+  const cls = k==="spending" ? "tag auto" : k==="free" ? "tag due" : k==="capacity" ? "tag over" : k==="perm"||k==="auth" ? "tag manual" : "tag cpa";
   return '<span class="'+cls+'" title="'+esc(String(sig||""))+'">'+esc(signalLabel(sig))+'</span>';
 }
 function stateTag(st, src, health){
@@ -1385,7 +1429,7 @@ async function loadState(opts){
         " · key_set=" + !!cfg.management_key_set +
         " · tick=" + (cfg.tick_seconds||"-") + "s" +
         " · max_reset=" + (cfg.max_reset_seconds||"-") + "s" +
-        " · state_path=" + (cfg.state_path||"-") +
+        " · state_db=" + (cfg.state_db_path||cfg.state_path||"-") +
         " · cpamp=" + (cfg.cpamp_url||"(未配)") +
         " · min_reset=" + (cfg.min_reset_seconds||0) +
         " · unobs_est=" + !!cfg.include_unobserved_quota_est +
@@ -1841,6 +1885,104 @@ function actionLogActBucket(act){
   if(a.indexOf("skip")>=0) return "skip";
   return a || "other";
 }
+function prettyJSONMaybe(raw){
+  var s = String(raw==null?"":raw).trim();
+  if(!s) return "";
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch(e){
+    return s;
+  }
+}
+function closeActionDetail(){
+  var m = document.getElementById("actionDetailModal");
+  if(m) m.hidden = true;
+  window._ACTION_DETAIL_JSON = "";
+  document.removeEventListener("keydown", actionDetailEscHandler);
+}
+function actionDetailEscHandler(e){
+  if(e && e.key === "Escape") closeActionDetail();
+}
+function copyActionDetail(){
+  var t = window._ACTION_DETAIL_JSON || "";
+  if(!t){ alert("无可复制内容"); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){
+      var btn = document.getElementById("actionDetailCopyBtn");
+      if(btn){ var old = btn.textContent; btn.textContent = "已复制"; setTimeout(function(){ btn.textContent = old; }, 1200); }
+    }).catch(function(){ prompt("复制以下 JSON：", t); });
+  } else {
+    prompt("复制以下 JSON：", t);
+  }
+}
+function openActionDetail(idx){
+  var rows = (window._ACTION_LOG_ROWS||[]);
+  var x = rows[idx];
+  if(!x){ alert("记录不存在或已刷新"); return; }
+  var actLab = (typeof passiveActionLabel==="function" ? passiveActionLabel(x.action) : null) || (typeof patrolActionLabel==="function" ? patrolActionLabel(x.action) : x.action) || x.action || "—";
+  if(x.action==="delete"||x.action==="deleted") actLab = "删除";
+  if(x.action==="patrol_abort_net") actLab = "网络中止";
+  var headers = x.headers || {};
+  var headerKeys = Object.keys(headers);
+  var headerText = headerKeys.length
+    ? headerKeys.map(function(k){ return k + ": " + headers[k]; }).join("\n")
+    : "";
+  var bodyPretty = prettyJSONMaybe(x.body);
+  var payload = {
+    time_ms: x.time_ms||0,
+    time: fmtTime(x.time_ms),
+    action: x.action||"",
+    action_label: actLab,
+    source: x.source||"",
+    account: x.account||"",
+    auth_index: x.auth_index||"",
+    file_name: x.file_name||"",
+    http_code: x.http_code||0,
+    signal: x.signal||"",
+    reason: x.reason||"",
+    provider: x.provider||"",
+    auth_type: x.auth_type||"",
+    model: x.model||"",
+    event_hash: x.event_hash||"",
+    headers: headers,
+    body: x.body||""
+  };
+  window._ACTION_DETAIL_JSON = JSON.stringify(payload, null, 2);
+  var html = ""
+    + '<dl class="modal-dl">'
+    + '<dt>时间</dt><dd>'+esc(fmtTime(x.time_ms))+'</dd>'
+    + '<dt>动作</dt><dd>'+esc(actLab)+' <span class="muted">('+esc(x.action||"—")+')</span></dd>'
+    + '<dt>来源</dt><dd>'+esc(x.source||"—")+'</dd>'
+    + '<dt>账号</dt><dd>'+esc(x.account||"—")+'</dd>'
+    + '<dt>auth_index</dt><dd class="mono">'+esc(x.auth_index||"—")+'</dd>'
+    + (x.file_name ? '<dt>文件</dt><dd>'+esc(x.file_name)+'</dd>' : '')
+    + '<dt>HTTP</dt><dd>'+esc(String(x.http_code||"—"))+'</dd>'
+    + '<dt>信号</dt><dd>'+esc(x.signal||"—")+'</dd>'
+    + '<dt>说明</dt><dd>'+esc(x.reason||"—")+'</dd>'
+    + (x.provider ? '<dt>Provider</dt><dd>'+esc(x.provider)+'</dd>' : '')
+    + (x.auth_type ? '<dt>AuthType</dt><dd>'+esc(x.auth_type)+'</dd>' : '')
+    + (x.model ? '<dt>模型</dt><dd>'+esc(x.model)+'</dd>' : '')
+    + (x.event_hash ? '<dt>EventHash</dt><dd class="mono">'+esc(x.event_hash)+'</dd>' : '')
+    + '</dl>';
+  if(headerText){
+    html += '<div class="modal-sec"><h4>响应 Headers（节选）</h4><pre class="modal-pre">'+esc(headerText)+'</pre></div>';
+  } else {
+    html += '<div class="modal-sec"><h4>响应 Headers（节选）</h4><div class="muted">无（旧日志或未携带限流相关头）</div></div>';
+  }
+  if(bodyPretty){
+    html += '<div class="modal-sec"><h4>响应 Body 快照</h4><pre class="modal-pre">'+esc(bodyPretty)+'</pre></div>';
+  } else {
+    html += '<div class="modal-sec"><h4>响应 Body 快照</h4><div class="muted">无 body（升级前旧日志、tick 恢复、或上游未返回正文）</div></div>';
+  }
+  html += '<div class="hint" style="margin-top:.75rem">快照在处理时写入 state，最长约 4KB；用于「解析跳过」等场景回溯 429 原文。</div>';
+  var bodyEl = document.getElementById("actionDetailBody");
+  var modal = document.getElementById("actionDetailModal");
+  var title = document.getElementById("actionDetailTitle");
+  if(bodyEl) bodyEl.innerHTML = html;
+  if(title) title.textContent = "处理详情 · " + actLab;
+  if(modal) modal.hidden = false;
+  document.addEventListener("keydown", actionDetailEscHandler);
+}
 function renderActionLog(deletes, actions){
   var tb = document.getElementById("actionLogBody") || document.getElementById("passiveActionBody");
   if(!tb) return;
@@ -1855,10 +1997,21 @@ function renderActionLog(deletes, actions){
     else if(/region|not available in your/i.test(rs)) src = "区域";
     else if(/permission-denied|invalid or expired|401|403/i.test(rs) && rs.indexOf("free-usage")<0) src = "死号";
     else if(/spending-limit|402/i.test(rs)) src = "积分";
-    rows.push({time_ms:x.deleted_at_ms||0, action:"delete", source:src, account:x.account||x.file_name||x.auth_index||"?", http_code:x.http_code||"", reason:x.reason||"", auth_index:x.auth_index||""});
+    rows.push({
+      time_ms:x.deleted_at_ms||0, action:"delete", source:src,
+      account:x.account||x.file_name||x.auth_index||"?", file_name:x.file_name||"",
+      http_code:x.http_code||"", reason:x.reason||"", auth_index:x.auth_index||"",
+      provider:x.provider||"", body:x.reason||"", signal:"delete"
+    });
   });
   actions.forEach(function(x){
-    rows.push({time_ms:x.time_ms||0, action:x.action||"", source:passiveSourceLabel(x.source), account:x.account||x.file_name||x.auth_index||"?", http_code:x.http_code||"", reason:x.reason||x.signal||"", auth_index:x.auth_index||""});
+    rows.push({
+      time_ms:x.time_ms||0, action:x.action||"", source:passiveSourceLabel(x.source),
+      account:x.account||x.file_name||x.auth_index||"?", file_name:x.file_name||"",
+      http_code:x.http_code||"", reason:x.reason||x.signal||"", signal:x.signal||"",
+      auth_index:x.auth_index||"", provider:x.provider||"", auth_type:x.auth_type||"",
+      model:x.model||"", body:x.body||"", headers:x.headers||null, event_hash:x.event_hash||""
+    });
   });
   rows.sort(function(a,b){ return (b.time_ms||0)-(a.time_ms||0); });
   var seen={}, list=[];
@@ -1874,33 +2027,42 @@ function renderActionLog(deletes, actions){
     if(fSrc !== "all" && actionLogSourceBucket(r.source, r.reason) !== fSrc) return false;
     if(fAct !== "all" && actionLogActBucket(r.action) !== fAct) return false;
     if(q){
-      var hay = ((r.account||"")+" "+(r.auth_index||"")+" "+(r.reason||"")+" "+(r.action||"")+" "+(r.source||"")+" "+(r.http_code||"")).toLowerCase();
+      var hay = ((r.account||"")+" "+(r.auth_index||"")+" "+(r.reason||"")+" "+(r.action||"")+" "+(r.source||"")+" "+(r.http_code||"")+" "+(r.body||"")+" "+(r.signal||"")).toLowerCase();
       if(hay.indexOf(q) < 0) return false;
     }
     return true;
   });
   var info = document.getElementById("logFilterInfo");
-  if(info) info.textContent = "显示 "+Math.min(100, filtered.length)+" / 合并 "+list.length;
+  if(info) info.textContent = "显示 "+Math.min(100, filtered.length)+" / 合并 "+list.length+" · 点说明看详情";
   filtered = filtered.slice(0, 80);
-  var fp = fSrc+"|"+fAct+"|"+q+"|"+filtered.map(function(x){ return (x.time_ms||0)+":"+(x.action||"")+":"+(x.auth_index||x.account||"")+":"+(x.reason||""); }).join("|");
+  window._ACTION_LOG_ROWS = filtered;
+  var fp = fSrc+"|"+fAct+"|"+q+"|"+filtered.map(function(x){
+    return (x.time_ms||0)+":"+(x.action||"")+":"+(x.auth_index||x.account||"")+":"+(x.reason||"")+":"+((x.body||"").length)+":"+(x.model||"");
+  }).join("|");
   if(fp === (window.ACTION_LOG_FP||"")) return;
   window.ACTION_LOG_FP = fp;
   if(!filtered.length){
     tb.innerHTML = '<tr><td colspan="7" class="muted" style="padding:.5rem">无匹配记录（可清空筛选）</td></tr>';
     return;
   }
-  tb.innerHTML = filtered.map(function(x){
-    var color = (x.action==="delete"||x.action==="deleted") ? "var(--err)" : ((x.action==="recover"||x.action==="reenable"||x.action==="reenabled") ? "var(--ok)" : (String(x.action||"").indexOf("skip")>=0 ? "var(--muted)" : "var(--warn)"));
+  tb.innerHTML = filtered.map(function(x, idx){
+    var color = (x.action==="delete"||x.action==="deleted") ? "var(--err)" : ((x.action==="recover"||x.action==="reenable"||String(x.action||"").indexOf("reenabled")===0) ? "var(--ok)" : (String(x.action||"").indexOf("skip")>=0||x.action==="external_invalid" ? "var(--muted)" : "var(--warn)"));
     var actLab = (typeof passiveActionLabel==="function" ? passiveActionLabel(x.action) : null) || (typeof patrolActionLabel==="function" ? patrolActionLabel(x.action) : x.action) || x.action || "—";
     if(x.action==="delete"||x.action==="deleted") actLab = "删除";
     if(x.action==="patrol_abort_net") actLab = "网络中止";
+    var reasonText = x.reason || x.signal || "（无说明，点开看元数据）";
+    var hasSnap = !!(x.body || (x.headers && Object.keys(x.headers).length));
+    var linkCls = "reason-link" + (hasSnap ? "" : " muted-link");
+    var tip = hasSnap ? "点击查看请求响应快照" : "点击查看详情（无 body 快照）";
     return '<tr style="border-bottom:1px solid var(--soft)">' +
       '<td style="padding:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+fmtTime(x.time_ms)+'</td>' +
       '<td style="color:'+color+';font-weight:600;white-space:nowrap">'+esc(actLab)+'</td>' +
       '<td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.source||"—")+'</td>' +
       '<td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.auth_index||"")+'">'+esc(x.account||"?")+'</td>' +
       '<td>'+(x.http_code||"—")+'</td>' +
-      '<td style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(x.reason||"")+'">'+esc(x.reason||"")+'</td>' +
+      '<td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(tip+": "+reasonText)+'">' +
+        '<a href="javascript:void(0)" class="'+linkCls+'" onclick="openActionDetail('+idx+')">'+esc(reasonText)+'</a>' +
+      '</td>' +
     '</tr>';
   }).join("");
 }
@@ -2039,6 +2201,8 @@ function paintPatrol(p, r){
     if(st2) st2.style.color = "";
     document.getElementById("patrolBtn").textContent = "巡查中...";
     document.getElementById("patrolBtn").disabled = true;
+    var psb=document.getElementById("patrolSpendBtn"); if(psb) psb.disabled=true;
+    var pcb=document.getElementById("patrolCPADisabledBtn"); if(pcb) pcb.disabled=true;
     }
     document.getElementById("patrolStopBtn").style.display = "";
     var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
@@ -2046,7 +2210,7 @@ function paintPatrol(p, r){
     var errRaw = (p.last_error||"").trim();
     var err = errRaw ? ("⚠ " + errRaw) : "";
     var aborted = !!errRaw && (errRaw.indexOf("中止")>=0 || errRaw.indexOf("连通")>=0 || errRaw.indexOf("网络")>=0 || errRaw.indexOf("代理")>=0);
-    var scope = p.scope ? (p.scope==="spending_only"?"冷却复核":"全量启用") : "";
+    var scope = p.scope ? (p.scope==="spending_only"?"冷却复核":(p.scope==="cpa_disabled"?"CPA 禁用复查":"全量启用")) : "";
     if(probed===0 && !p.started_at_ms && !p.completed_at_ms){
       line1 = "空闲 · 等待手动/定时巡查";
       line2 = thr ? ("上次并发 " + thr) : "";
@@ -2062,6 +2226,7 @@ function paintPatrol(p, r){
       try{
         var b=document.getElementById("patrolBtn"); if(b){ b.disabled=false; b.textContent="启动巡查"; }
         var sb=document.getElementById("patrolSpendBtn"); if(sb){ sb.disabled=false; sb.textContent="仅复查冷却号"; }
+        var cb=document.getElementById("patrolCPADisabledBtn"); if(cb){ cb.disabled=false; cb.textContent="复查 CPA 禁用"; }
       }catch(e){}
     } else {
       // totals only in summary chips — avoid dual summary strings
@@ -2081,6 +2246,8 @@ function paintPatrol(p, r){
     }
     document.getElementById("patrolBtn").textContent = "启动巡查";
     document.getElementById("patrolBtn").disabled = false;
+    var sb2=document.getElementById("patrolSpendBtn"); if(sb2){ sb2.disabled=false; sb2.textContent="仅复查冷却号"; }
+    var cb2=document.getElementById("patrolCPADisabledBtn"); if(cb2){ cb2.disabled=false; cb2.textContent="复查 CPA 禁用"; }
     document.getElementById("patrolStopBtn").style.display = "none";
   }
   st.textContent = line1;
@@ -2102,7 +2269,7 @@ function paintPatrol(p, r){
     window._PATROL_LOG_FP = logFp;
     tbody.innerHTML = log.slice(0, 50).map(function(e){
       var act=e.action||"";
-      var color = (act==="deleted"||act==="patrol_abort_net") ? "var(--err)" : (act==="alive") ? "var(--ok)" : act==="reenabled" ? "var(--accent)" : (act==="cooldown"||act==="cooldown_skip") ? "var(--accent)" : "var(--warn)";
+      var color = (act==="deleted"||act==="patrol_abort_net") ? "var(--err)" : (act==="alive") ? "var(--ok)" : String(act).indexOf("reenabled")===0 ? "var(--accent)" : (act==="cooldown"||act==="cooldown_skip") ? "var(--accent)" : act==="external_invalid" ? "var(--muted)" : "var(--warn)";
       return '<tr style="border-bottom:1px solid var(--soft)">' +
         '<td style="padding:.2rem;white-space:nowrap">'+fmtTime(e.time_ms)+'</td>' +
         '<td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.account||e.file_name||e.auth_index||"?")+'</td>' +
@@ -2117,8 +2284,10 @@ function paintPatrol(p, r){
 async function patrolSpendingStart(){
   var btn = document.getElementById("patrolSpendBtn");
   var main = document.getElementById("patrolBtn");
+  var cpaBtn = document.getElementById("patrolCPADisabledBtn");
   if(btn){ btn.disabled = true; btn.textContent = "复查中..."; }
   if(main) main.disabled = true;
+  if(cpaBtn) cpaBtn.disabled = true;
   document.getElementById("patrolStopBtn").style.display = "";
   var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
   var pp=document.getElementById("patrolProgress"); if(pp){ pp.hidden=false; pp.style.display=""; }
@@ -2136,10 +2305,40 @@ async function patrolSpendingStart(){
     if(main) main.disabled=false;
   }
 }
+async function patrolCPADisabledStart(){
+  var btn = document.getElementById("patrolCPADisabledBtn");
+  var main = document.getElementById("patrolBtn");
+  var spend = document.getElementById("patrolSpendBtn");
+  if(!confirm("复查所有 CPA 已禁用且未被插件接管的 xAI 账号？\n\n200 将自动启用；429/402 保持禁用并纳入追踪；401/403 保持禁用且不删除。")) return;
+  if(btn){ btn.disabled=true; btn.textContent="复查中..."; }
+  if(main) main.disabled=true;
+  if(spend) spend.disabled=true;
+  document.getElementById("patrolStopBtn").style.display="";
+  var pp=document.getElementById("patrolProgress"); if(pp){pp.hidden=false;pp.style.display="";}
+  document.getElementById("patrolStatus").textContent="启动 CPA 禁用复查...";
+  try{
+    var r=await api("patrol/cpa-disabled",{method:"POST"});
+    if(!r||!r.ok){alert("CPA 禁用复查启动失败: "+JSON.stringify(r&&r.error||r));return;}
+    paintPatrol(extractPatrol(r),r);
+    try{if(PATROL_POLL)clearInterval(PATROL_POLL);}catch(e){}
+    PATROL_POLL=setInterval(patrolPoll,1200);
+    patrolPoll();
+  }catch(e){
+    alert("CPA 禁用复查异常: "+(e&&e.message?e.message:e));
+  }finally{
+    if(!PATROL_POLL){
+      if(btn){btn.disabled=false;btn.textContent="复查 CPA 禁用";}
+      if(main)main.disabled=false;
+      if(spend)spend.disabled=false;
+    }
+  }
+}
 async function patrolStart(){
   var btn = document.getElementById("patrolBtn");
   btn.disabled = true;
   btn.textContent = "巡查中...";
+  var spendBtn=document.getElementById("patrolSpendBtn"); if(spendBtn) spendBtn.disabled=true;
+  var cpaBtn=document.getElementById("patrolCPADisabledBtn"); if(cpaBtn) cpaBtn.disabled=true;
   document.getElementById("patrolStopBtn").style.display = "";
   var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
   document.getElementById("patrolStatus").textContent = "启动中...";

@@ -17,7 +17,7 @@
 | Windows ARM64 | windows/arm64 | `cpa-xai-quota-guard.dll` | `cpa-xai-quota-guard_{ver}_windows_arm64.zip`（可能缺工具链） |
 
 > CPA 插件商店硬性约定（否则安装 API 返回 **HTTP 502 / plugin_install_failed**）：
-> 1. zip 文件名：`{plugin_id}_{version}_{goos}_{goarch}.zip`（version **无** `v` 前缀，如 `0.3.11`）
+> 1. zip 文件名：`{plugin_id}_{version}_{goos}_{goarch}.zip`（version **无** `v` 前缀，如 `0.3.12`）
 > 2. zip 内动态库位于**根目录**（不能是 `linux/amd64/...` 嵌套路径）
 > 3. 同 Release 必须附带 `checksums.txt`（sha256）
 
@@ -51,7 +51,7 @@ plugins:
       quota_guard_enabled: true
       management_url: "http://127.0.0.1:8317"
       management_key: "<CPA_MANAGEMENT_KEY>"
-      state_path: "data/cpa-xai-quota-guard-state.json"
+      state_path: "data/cpa-xai-quota-guard-state.sqlite"
       patrol_auth_dir: "/root/.cli-proxy-api"   # 按实际 auth 目录改
 ```
 
@@ -66,7 +66,7 @@ plugins:
 ```bash
 curl -X POST \
   -H "Authorization: Bearer <CPA_MANAGEMENT_KEY>" \
-  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=0.3.11"
+  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=0.3.12"
 ```
 
 > 商店安装依赖 CPA 能拉取 GitHub Release 资产。若机器无法访问 GitHub，改用方式 B/C。
@@ -102,7 +102,7 @@ plugins:
 Release zip 下载也可同样加前缀，例如：
 
 ```text
-https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.11/cpa-xai-quota-guard_0.3.11_linux_amd64.zip
+https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.12/cpa-xai-quota-guard_0.3.12_linux_amd64.zip
 ```
 
 > 加速域名仅为网络可达性方案，**不改变**插件校验与版本语义；密钥仍只写本地配置。
@@ -147,7 +147,7 @@ docker restart cli-proxy-api   # 或 systemctl restart ...
 
 **升级注意**
 
-- `state_path` JSON 会保留冷却/历史；一般无需迁移  
+- `state_path` SQLite 会保留冷却/历史；旧 JSON 会在首次启动时自动导入并保留 `.migrated.bak`
 - 大版本若改 state schema，看 CHANGELOG  
 - 确认日志：`plugin registered ... version=x.y.z`  
 - 勿同时放多个旧 so 副本导致加载错文件  
@@ -199,11 +199,11 @@ plugins:
     # - "https://ghproxy.com/https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
 ```
 
-### 正确的 Release 资产示例（0.3.11）
+### 正确的 Release 资产示例（0.3.12）
 
 ```text
-cpa-xai-quota-guard_0.3.11_linux_amd64.zip   # 内含根目录 cpa-xai-quota-guard.so
-cpa-xai-quota-guard_0.3.11_windows_amd64.zip
+cpa-xai-quota-guard_0.3.12_linux_amd64.zip   # 内含根目录 cpa-xai-quota-guard.so
+cpa-xai-quota-guard_0.3.12_windows_amd64.zip
 checksums.txt
 ```
 
@@ -224,7 +224,7 @@ checksums.txt
 1. 改代码 → `go test` → 部署实测  
 2.  bump `pluginVer` + `registry.json` version + CHANGELOG  
 3. commit / push `main`  
-4. 打 tag：`git tag v0.3.11 && git push origin v0.3.11`  
+4. 打 tag：`git tag v0.3.12 && git push origin v0.3.12`  
 5. CI 构建多平台 zip 并挂到 GitHub Release  
 6. 确认 raw `registry.json` 可访问  
 

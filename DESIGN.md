@@ -116,10 +116,11 @@ context canceled  + Content-Type: text/event-stream
 
 ### 4.4 信号与排除
 
-**冷却信号（429 前提下）：**
+**冷却信号（429 前提下，及容量类 503/529/流式失败）：**
 
-- `subscription:free-usage-exhausted` / free usage / free-usage  
+- `subscription:free-usage-exhausted` / free usage / free-usage → 默认 rolling **24h**  
 - 兼容 OpenAI-like：`rate_limit_exceeded` / TPM·RPM 文案 + 可解析重置  
+- **模型容量/过载**（`model is currently at capacity` / `high demand` / `priority processing`）→ signal=`model_capacity`，默认 **~5 分钟**（可解析 “in N minutes”），**绝不按 24h free-usage 处理**；延长冷却时不得缩短更长的 free-usage/spending 等待  
 - Headers：`Retry-After`、`x-ratelimit-reset*`、`X-Should-Retry` 辅助  
 
 **删除信号：**
