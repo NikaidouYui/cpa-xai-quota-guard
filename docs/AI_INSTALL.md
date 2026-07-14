@@ -2,7 +2,7 @@
 
 面向：**把本段完整复制给任意 AI 助手**，让其在你的 CPA 主机上安装/升级插件。  
 当前稳定版：**v0.3.10**  
-仓库：https://github.com/Mortal520/cpa-xai-quota-guard
+仓库：https://github.com/NikaidouYui/cpa-xai-quota-guard
 
 ---
 
@@ -41,10 +41,10 @@
 | windows/amd64 | cpa-xai-quota-guard_windows_amd64.zip | cpa-xai-quota-guard.dll |
 
 Release 下载（官方）：
-https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.10/<资产名>
+https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.10/<资产名>
 
 加速示例（可选）：
-https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.10/<资产名>
+https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.10/<资产名>
 
 安装路径示例（Linux amd64）：
 $CPA_ROOT/plugins/linux/amd64/cpa-xai-quota-guard.so
@@ -102,7 +102,7 @@ case "$OS-$ARCH" in
   *) echo "不支持的架构: $OS $ARCH"; exit 1 ;;
 esac
 
-BASE="https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/${VER}/${ZIP}"
+BASE="https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/${VER}/${ZIP}"
 if [ "${USE_GHPROXY}" = "1" ]; then
   URL="https://ghproxy.com/${BASE}"
 else
@@ -155,8 +155,8 @@ plugins:
   dir: "plugins"
   # 可选商店源：
   # store-sources:
-  #   - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
-  #   - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+  #   - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
+  #   - "https://ghproxy.com/https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
   configs:
     cpa-xai-quota-guard:
       enabled: true
@@ -181,7 +181,7 @@ plugins:
 ```bash
 VER=v0.3.10 GOOS=linux GOARCH=amd64 LIB=cpa-xai-quota-guard.so ZIP=cpa-xai-quota-guard_0.3.10_linux_amd64.zip \
 DEST="${CPA_PLUGINS_DIR:-./plugins}/linux/amd64" && mkdir -p "$DEST" && \
-curl -fL "https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/${VER}/${ZIP}" -o /tmp/${ZIP} && \
+curl -fL "https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/${VER}/${ZIP}" -o /tmp/${ZIP} && \
 unzip -o /tmp/${ZIP} -d /tmp/cpaqg && \
 find /tmp/cpaqg -type f -name '*.so' -exec cp -f {} "$DEST/$LIB" \; && \
 ls -la "$DEST/$LIB" && echo "请重启 CPA 并配置 management_key / patrol_auth_dir"
@@ -190,7 +190,7 @@ ls -la "$DEST/$LIB" && echo "请重启 CPA 并配置 management_key / patrol_aut
 GitHub 慢时把 URL 换成：
 
 ```text
-https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.10/cpa-xai-quota-guard_0.3.10_linux_amd64.zip
+https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.10/cpa-xai-quota-guard_0.3.10_linux_amd64.zip
 ```
 
 ---
@@ -202,7 +202,7 @@ $Ver = "v0.3.10"
 $Plugins = "C:\path\to\cliproxyapi\plugins"   # 改这里
 $Dest = Join-Path $Plugins "windows\amd64"
 $Zip = "cpa-xai-quota-guard_windows_amd64.zip"
-$Url = "https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/$Ver/$Zip"
+$Url = "https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/$Ver/$Zip"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 $Tmp = Join-Path $env:TEMP "cpaqg-$Ver"
 New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
@@ -222,13 +222,13 @@ Write-Host "请重启 CPA，并写入 plugins.configs.cpa-xai-quota-guard"
 ```yaml
 plugins:
   store-sources:
-    - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
 ```
 
 加速：
 
 ```yaml
-    - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://ghproxy.com/https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
 ```
 
 重启后：管理中心 → 插件商店 → **xAI Quota Guard** → 安装。
@@ -266,6 +266,6 @@ curl -sS -H "X-Management-Key: $KEY" \
 
 ## 参考
 
-- 安装详解：https://github.com/Mortal520/cpa-xai-quota-guard/blob/main/docs/INSTALL.md  
-- Releases：https://github.com/Mortal520/cpa-xai-quota-guard/releases/tag/v0.3.10  
-- 仓库：https://github.com/Mortal520/cpa-xai-quota-guard  
+- 安装详解：https://github.com/NikaidouYui/cpa-xai-quota-guard/blob/main/docs/INSTALL.md  
+- Releases：https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/tag/v0.3.10  
+- 仓库：https://github.com/NikaidouYui/cpa-xai-quota-guard  

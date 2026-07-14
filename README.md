@@ -2,15 +2,15 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Version](https://img.shields.io/badge/version-0.3.10-blue.svg)](./CHANGELOG.md)
-[![CI](https://github.com/Mortal520/cpa-xai-quota-guard/actions/workflows/build.yml/badge.svg)](https://github.com/Mortal520/cpa-xai-quota-guard/actions/workflows/build.yml)
-[![Release](https://img.shields.io/github/v/release/Mortal520/cpa-xai-quota-guard?include_prereleases)](https://github.com/Mortal520/cpa-xai-quota-guard/releases)
+[![CI](https://github.com/NikaidouYui/cpa-xai-quota-guard/actions/workflows/build.yml/badge.svg)](https://github.com/NikaidouYui/cpa-xai-quota-guard/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/NikaidouYui/cpa-xai-quota-guard?include_prereleases)](https://github.com/NikaidouYui/cpa-xai-quota-guard/releases)
 
 CLIProxyAPI **原生 Go 插件**（当前版本 **0.3.10**）：仅针对 **xAI** 登录凭证做额度/死号管控、主动巡查、管理 UI 与用量统计。
 
 | | |
 |--|--|
-| 仓库 | https://github.com/Mortal520/cpa-xai-quota-guard |
-| 最新 Release | https://github.com/Mortal520/cpa-xai-quota-guard/releases/tag/v0.3.10 |
+| 仓库 | https://github.com/NikaidouYui/cpa-xai-quota-guard |
+| 最新 Release | https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/tag/v0.3.10 |
 | 插件 ID | `cpa-xai-quota-guard` |
 | 协议 | [MIT](./LICENSE) |
 
@@ -24,7 +24,7 @@ export CPA_MGMT_URL="http://127.0.0.1:8317"            # 可选，用于校验
 export CPA_MGMT_KEY="<CPA_MANAGEMENT_KEY>"             # 可选
 export USE_GHPROXY=0                                   # GitHub 慢可改 1
 
-curl -fsSL https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/scripts/install.sh | bash
 ```
 
 或克隆后本地执行：
@@ -44,7 +44,7 @@ CPA_PLUGINS_DIR=/path/to/plugins bash scripts/install.sh
 VER=v0.3.10 ZIP=cpa-xai-quota-guard_0.3.10_linux_amd64.zip
 DEST="${CPA_PLUGINS_DIR}/linux/amd64"
 mkdir -p "$DEST"
-curl -fL "https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/${VER}/${ZIP}" -o /tmp/$ZIP
+curl -fL "https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/${VER}/${ZIP}" -o /tmp/$ZIP
 unzip -o /tmp/$ZIP -d /tmp/cpaqg
 find /tmp/cpaqg -name '*.so' -exec cp -f {} "$DEST/cpa-xai-quota-guard.so" \;
 # 然后写入下方最小配置并重启 CPA
@@ -53,7 +53,7 @@ find /tmp/cpaqg -name '*.so' -exec cp -f {} "$DEST/cpa-xai-quota-guard.so" \;
 GitHub 访问不稳时加前缀：
 
 ```text
-https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.10/...
+https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.10/...
 ```
 
 > **商店安装 502**：CPA 要求 zip 名为 `cpa-xai-quota-guard_{version}_{goos}_{goarch}.zip`，库文件在 zip **根目录**，且 Release 含 `checksums.txt`。详见 [docs/INSTALL.md](./docs/INSTALL.md)「商店安装返回 502」。
@@ -130,7 +130,7 @@ plugins:
   dir: "plugins"
   # 可选商店源（也可用 ghproxy 加速 raw）
   # store-sources:
-  #   - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+  #   - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
   configs:
     cpa-xai-quota-guard:
       enabled: true
@@ -226,9 +226,9 @@ plugins:
   enabled: true
   dir: "plugins"
   store-sources:
-    - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
     # 网络不稳：
-    # - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    # - "https://ghproxy.com/https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
   configs:
     cpa-xai-quota-guard:
       enabled: true
@@ -248,7 +248,7 @@ plugins:
 | macOS amd64 | `plugins/darwin/amd64/cpa-xai-quota-guard.dylib` |
 | Windows amd64 | `plugins/windows/amd64/cpa-xai-quota-guard.dll` |
 
-Release 资产示例：`cpa-xai-quota-guard_0.3.10_linux_amd64.zip`（见 [v0.3.10](https://github.com/Mortal520/cpa-xai-quota-guard/releases/tag/v0.3.10)）。  
+Release 资产示例：`cpa-xai-quota-guard_0.3.10_linux_amd64.zip`（见 [v0.3.10](https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/tag/v0.3.10)）。  
 构建产物与 zip **不要提交进 git**；发版走 GitHub Release（tag `v*` 触发 CI）。
 
 ### 验证

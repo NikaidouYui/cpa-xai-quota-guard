@@ -44,7 +44,7 @@ plugins:
   enabled: true
   dir: "plugins"
   store-sources:
-    - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
   configs:
     cpa-xai-quota-guard:
       enabled: true
@@ -86,11 +86,11 @@ plugins:
   dir: "plugins"
   store-sources:
     # 原版
-    # - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    # - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
     # 加速 raw（二选一即可）
-    - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://ghproxy.com/https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
     # 或使用仓库内镜像清单文件（内容与 registry.json 相同，便于自建 CDN 只同步此文件）
-    # - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.mirror.json"
+    # - "https://ghproxy.com/https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.mirror.json"
   configs:
     cpa-xai-quota-guard:
       enabled: true
@@ -102,7 +102,7 @@ plugins:
 Release zip 下载也可同样加前缀，例如：
 
 ```text
-https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.10/cpa-xai-quota-guard_0.3.10_linux_amd64.zip
+https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.10/cpa-xai-quota-guard_0.3.10_linux_amd64.zip
 ```
 
 > 加速域名仅为网络可达性方案，**不改变**插件校验与版本语义；密钥仍只写本地配置。
@@ -194,9 +194,9 @@ plugins:
   enabled: true
   dir: "plugins"
   store-sources:
-    - "https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    - "https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
     # 国内/受限网络示例：
-    # - "https://ghproxy.com/https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/registry.json"
+    # - "https://ghproxy.com/https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/registry.json"
 ```
 
 ### 正确的 Release 资产示例（0.3.10）

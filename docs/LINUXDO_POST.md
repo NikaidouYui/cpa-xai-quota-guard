@@ -3,7 +3,7 @@
 > 针对 **xAI / Grok 登录凭证** 的 CPA 原生 Go 插件。  
 > 只干一件事：额度用尽先冷却，死号才删除，手动停用永不误开。
 
-**仓库**：[https://github.com/Mortal520/cpa-xai-quota-guard](https://github.com/Mortal520/cpa-xai-quota-guard)  
+**仓库**：[https://github.com/NikaidouYui/cpa-xai-quota-guard](https://github.com/NikaidouYui/cpa-xai-quota-guard)  
 **协议**：MIT  
 **当前版本**：`0.3.10`  
 **形态**：CLIProxyAPI / CPA **c-shared 原生插件**（不是油猴、不是独立旁路服务）
@@ -82,24 +82,24 @@
 
 ### 状态栏 / 额度
 
-![状态栏](https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/docs/screenshots/dashboard.png)
+![状态栏](https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/docs/screenshots/dashboard.png)
 
 ### 主动巡查
 
-![巡查](https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/docs/screenshots/patrol.png)
+![巡查](https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/docs/screenshots/patrol.png)
 
 ### 账号状态
 
-![账号](https://raw.githubusercontent.com/Mortal520/cpa-xai-quota-guard/main/docs/screenshots/accounts.png)
+![账号](https://raw.githubusercontent.com/NikaidouYui/cpa-xai-quota-guard/main/docs/screenshots/accounts.png)
 
 若 raw 图裂了，可看仓库：  
-https://github.com/Mortal520/cpa-xai-quota-guard/tree/main/docs/screenshots
+https://github.com/NikaidouYui/cpa-xai-quota-guard/tree/main/docs/screenshots
 
 ---
 
 ## 安装（简版）
 
-1. 从 [Releases](https://github.com/Mortal520/cpa-xai-quota-guard/releases) 下载对应平台 `.so` / 二进制产物  
+1. 从 [Releases](https://github.com/NikaidouYui/cpa-xai-quota-guard/releases) 下载对应平台 `.so` / 二进制产物  
 2. 放到 CPA 插件目录，例如：`plugins/linux/amd64/cpa-xai-quota-guard.so`  
 3. 在 CPA 插件配置里启用 `cpa-xai-quota-guard`  
 4. 填 `management_url` / `management_key`、`patrol_auth_dir`（巡查必填）  
@@ -107,7 +107,7 @@ https://github.com/Mortal520/cpa-xai-quota-guard/tree/main/docs/screenshots
 
 更细的安装 / 加速源 / 多架构说明：
 
-- [docs/INSTALL.md](https://github.com/Mortal520/cpa-xai-quota-guard/blob/main/docs/INSTALL.md)  
+- [docs/INSTALL.md](https://github.com/NikaidouYui/cpa-xai-quota-guard/blob/main/docs/INSTALL.md)  
 - 仓库源：`registry.json` / `registry.mirror.json`（含 ghproxy 加速 raw）
 
 配置片段（**key 请用占位符**）：
@@ -138,7 +138,7 @@ plugins:
 - **0.3.6** 删除插件自有深色模式，跟随 CPA/CPAMP 主题  
 - **0.3.10** 修复 `PATROL_POLL is not defined`、配置项回填空白、巡查日志刷新  
 
-完整记录：[CHANGELOG.md](https://github.com/Mortal520/cpa-xai-quota-guard/blob/main/CHANGELOG.md)
+完整记录：[CHANGELOG.md](https://github.com/NikaidouYui/cpa-xai-quota-guard/blob/main/CHANGELOG.md)
 
 ---
 
@@ -166,8 +166,8 @@ plugins:
 
 ## 链接
 
-- GitHub：https://github.com/Mortal520/cpa-xai-quota-guard  
-- License：https://github.com/Mortal520/cpa-xai-quota-guard/blob/main/LICENSE  
+- GitHub：https://github.com/NikaidouYui/cpa-xai-quota-guard  
+- License：https://github.com/NikaidouYui/cpa-xai-quota-guard/blob/main/LICENSE  
 - Issues：欢迎贴 **脱敏** 后的 `HTTP 状态 + body.code + 是否删除/冷却` 样本  
 
 ---

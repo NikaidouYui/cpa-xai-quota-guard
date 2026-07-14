@@ -30,7 +30,7 @@ case "$OS-$ARCH" in
   *) echo "unsupported: $OS $ARCH" >&2; exit 1 ;;
 esac
 
-BASE="https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/${VER_TAG}/${ZIP}"
+BASE="https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/${VER_TAG}/${ZIP}"
 URL="$BASE"
 [[ "$USE_GHPROXY" == "1" ]] && URL="https://ghproxy.com/${BASE}"
 
@@ -42,7 +42,7 @@ echo "==> download $URL"
 if ! curl -fL --retry 3 -o "$TMP/$ZIP" "$URL"; then
   # fallback: legacy asset name without version (pre-0.3.10)
   LEGACY_ZIP="cpa-xai-quota-guard_${GOOS}_${GOARCH}.zip"
-  LEGACY_BASE="https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/${VER_TAG}/${LEGACY_ZIP}"
+  LEGACY_BASE="https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/${VER_TAG}/${LEGACY_ZIP}"
   LEGACY_URL="$LEGACY_BASE"
   [[ "$USE_GHPROXY" == "1" ]] && LEGACY_URL="https://ghproxy.com/${LEGACY_BASE}"
   echo "==> primary failed, try legacy name $LEGACY_URL" >&2
