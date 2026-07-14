@@ -3,10 +3,10 @@
 # Usage:
 #   CPA_PLUGINS_DIR=/path/to/plugins CPA_MGMT_KEY=xxx ./scripts/install.sh
 # Optional:
-#   VER=v0.3.10 USE_GHPROXY=1 CPA_MGMT_URL=http://127.0.0.1:8317
+#   VER=v0.3.11 USE_GHPROXY=1 CPA_MGMT_URL=http://127.0.0.1:8317
 set -euo pipefail
-VER="${VER:-v0.3.10}"
-# normalize: accept 0.3.10 or v0.3.10
+VER="${VER:-v0.3.11}"
+# normalize: accept 0.3.11 or v0.3.11
 VER_TAG="$VER"
 [[ "$VER_TAG" != v* ]] && VER_TAG="v${VER_TAG}"
 VER_NUM="${VER_TAG#v}"

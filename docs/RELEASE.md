@@ -63,7 +63,7 @@ cpa-xai-quota-guard.so | .dll | .dylib
 
 ```bash
 # 名称
-ls cpa-xai-quota-guard_0.3.10_linux_amd64.zip checksums.txt
+ls cpa-xai-quota-guard_0.3.11_linux_amd64.zip checksums.txt
 # 根目录条目（只能看到库文件名，不能有 linux/）
-unzip -l cpa-xai-quota-guard_0.3.10_linux_amd64.zip
+unzip -l cpa-xai-quota-guard_0.3.11_linux_amd64.zip
 ```

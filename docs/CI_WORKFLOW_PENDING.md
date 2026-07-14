@@ -1,18 +1,20 @@
-# CI workflow 待推送说明
+# CI workflow 说明
 
-本地已改好的商店兼容 CI 在：
+商店兼容 CI 已写入：
 
-- `.github/workflows/build.yml`（工作区修改，可能因 OAuth 缺 `workflow` scope 无法 push）
+- `.github/workflows/build.yml`（主 workflow）
 - 备份：`docs/ci-build.yml.store-compatible`
 
-推送 workflow 需要：
+推送 workflow 需要 GitHub token 具备 **`workflow` scope**：
 
 ```bash
 gh auth refresh -s repo,workflow
 # 或 classic PAT 勾选 repo + workflow
-git add .github/workflows/build.yml
-git commit -m "ci: package store-compatible release assets"
 git push origin main
 ```
 
-在此之前请用手动/已发布的 v0.3.10 规范资产，避免重新发布旧布局 zip。
+Release 资产约定（`v*` tag 触发）：
+
+- zip：`cpa-xai-quota-guard_{version}_{goos}_{goarch}.zip`
+- zip 根目录：`cpa-xai-quota-guard.so|.dll|.dylib`
+- 同 Release：`checksums.txt`

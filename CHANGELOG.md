@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.11
 
 - **日额度池默认**：单账号估算由 **1M → 2M**（`DefaultFreeLimit`）；升级后覆盖 state 里旧的 1M 默认
+- **CI 商店兼容打包落地**：Release 资产为 `cpa-xai-quota-guard_{version}_{goos}_{goarch}.zip`，zip 根目录库文件 + `checksums.txt`
+- 版本号 / registry / 安装文档同步 **0.3.11**
 
 ## 0.3.10
 
