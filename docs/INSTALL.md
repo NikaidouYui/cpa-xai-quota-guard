@@ -66,7 +66,7 @@ plugins:
 ```bash
 curl -X POST \
   -H "Authorization: Bearer <CPA_MANAGEMENT_KEY>" \
-  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=v0.3.10"
+  "http://<CPA_HOST>:<PORT>/v0/management/plugin-store/cpa-xai-quota-guard/install?source=<SOURCE_ID>&version=0.3.10"
 ```
 
 > 商店安装依赖 CPA 能拉取 GitHub Release 资产。若机器无法访问 GitHub，改用方式 B/C。
@@ -102,7 +102,7 @@ plugins:
 Release zip 下载也可同样加前缀，例如：
 
 ```text
-https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.10/cpa-xai-quota-guard_linux_amd64.zip
+https://ghproxy.com/https://github.com/Mortal520/cpa-xai-quota-guard/releases/download/v0.3.10/cpa-xai-quota-guard_0.3.10_linux_amd64.zip
 ```
 
 > 加速域名仅为网络可达性方案，**不改变**插件校验与版本语义；密钥仍只写本地配置。

@@ -5,7 +5,7 @@
 
 **仓库**：[https://github.com/Mortal520/cpa-xai-quota-guard](https://github.com/Mortal520/cpa-xai-quota-guard)  
 **协议**：MIT  
-**当前版本**：`0.3.7`  
+**当前版本**：`0.3.10`  
 **形态**：CLIProxyAPI / CPA **c-shared 原生插件**（不是油猴、不是独立旁路服务）
 
 ---
@@ -136,7 +136,7 @@ plugins:
 - **0.3.3** 弹性并发（load + 探测健康，用户上限硬封顶）  
 - **0.3.4** status lite 轮询、日志优先非存活，减轻管理页卡顿  
 - **0.3.6** 删除插件自有深色模式，跟随 CPA/CPAMP 主题  
-- **0.3.7** 修复 `PATROL_POLL is not defined`、配置项回填空白、巡查日志刷新  
+- **0.3.10** 修复 `PATROL_POLL is not defined`、配置项回填空白、巡查日志刷新  
 
 完整记录：[CHANGELOG.md](https://github.com/Mortal520/cpa-xai-quota-guard/blob/main/CHANGELOG.md)
 
@@ -185,4 +185,4 @@ Star / Issue / PR 都欢迎。
 
 ---
 
-*本帖描述基于仓库 `0.3.7`；功能以 GitHub README 与 CHANGELOG 为准。*
+*本帖描述基于仓库 `0.3.10`；功能以 GitHub README 与 CHANGELOG 为准。*

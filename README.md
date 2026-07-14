@@ -36,7 +36,7 @@ CPA_PLUGINS_DIR=/path/to/plugins bash scripts/install.sh
 ### AI 助手安装（整段丢给 Codex / Claude / ChatGPT）
 
 完整提示词与排障见 **[docs/AI_INSTALL.md](./docs/AI_INSTALL.md)**。  
-核心要求：下载 `v0.3.10` 对应架构 zip → 放入 `plugins/<goos>/<goarch>/` → 合并配置 → 重启 CPA → 校验 `state.version == 0.3.7`。
+核心要求：下载 `v0.3.10` 对应架构 zip → 放入 `plugins/<goos>/<goarch>/` → 合并配置 → 重启 CPA → 校验 `state.version == 0.3.10`。
 
 ### Linux amd64 最短命令
 
@@ -248,7 +248,7 @@ plugins:
 | macOS amd64 | `plugins/darwin/amd64/cpa-xai-quota-guard.dylib` |
 | Windows amd64 | `plugins/windows/amd64/cpa-xai-quota-guard.dll` |
 
-Release 资产示例：`cpa-xai-quota-guard_linux_amd64.zip`（见 [v0.3.10](https://github.com/Mortal520/cpa-xai-quota-guard/releases/tag/v0.3.10)）。  
+Release 资产示例：`cpa-xai-quota-guard_0.3.10_linux_amd64.zip`（见 [v0.3.10](https://github.com/Mortal520/cpa-xai-quota-guard/releases/tag/v0.3.10)）。  
 构建产物与 zip **不要提交进 git**；发版走 GitHub Release（tag `v*` 触发 CI）。
 
 ### 验证
@@ -258,7 +258,7 @@ curl -sS -H "X-Management-Key: <KEY>" \
   "http://127.0.0.1:8317/v0/management/cpa-xai-quota-guard/state?view=focus"
 ```
 
-期望：`"version":"0.3.7"` 且插件已启用。日志：`plugin registered ... version=0.3.7`。
+期望：`"version":"0.3.10"` 且插件已启用。日志：`plugin registered ... version=0.3.10`。
 
 ## 构建与部署
 
@@ -284,6 +284,9 @@ docker restart cli-proxy-api
 | 0.3.4 | status lite / 日志优先非存活 |
 | 0.3.6 | 跟随宿主主题，去掉插件自有深色开关 |
 | 0.3.7 | 修复 `PATROL_POLL`、配置回填、巡查日志刷新 |
+| 0.3.8 | 连续网络失败时检测公网/代理并中止巡查 |
+| 0.3.9 | 中止时取消在途 HTTP，解锁按钮 |
+| 0.3.10 | 商店安装 502 修复：版本化 zip + 根目录库 + checksums |
 
 完整记录：[CHANGELOG.md](./CHANGELOG.md)
 

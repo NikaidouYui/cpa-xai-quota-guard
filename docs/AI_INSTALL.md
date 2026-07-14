@@ -16,7 +16,7 @@
 2) 解压库文件到 CPA 的 plugins/<goos>/<goarch>/
 3) 合并 plugins.configs.cpa-xai-quota-guard 最小配置（不要覆盖其它插件配置）
 4) 重启 CPA（docker 容器名或 systemd 以现场为准）
-5) 用 management API 验证 state.version == 0.3.7
+5) 用 management API 验证 state.version == 0.3.10
 
 硬性约束：
 - 插件 ID：cpa-xai-quota-guard
@@ -137,7 +137,7 @@ if [ -n "${CPA_MGMT_KEY}" ] && [ "${CPA_MGMT_KEY}" != "<CPA_MANAGEMENT_KEY>" ]; 
     "${CPA_MGMT_URL}/v0/management/cpa-xai-quota-guard/state?view=focus" \
     | sed -n '1,5p' || true
   echo
-  echo "请确认 JSON 中 version 为 0.3.7 且 enabled 为 true"
+  echo "请确认 JSON 中 version 为 0.3.10 且 enabled 为 true"
 else
   echo "未设置有效 CPA_MGMT_KEY，跳过 API 验证；请到管理页确认插件版本"
 fi
@@ -242,10 +242,10 @@ plugins:
 curl -sS -H "X-Management-Key: $KEY" \
   "$URL/v0/management/cpa-xai-quota-guard/state?view=focus"
 
-# 期望： "version":"0.3.7"  "enabled": true
+# 期望： "version":"0.3.10"  "enabled": true
 
 # 2) 日志关键字
-# plugin registered plugin_id=cpa-xai-quota-guard version=0.3.7
+# plugin registered plugin_id=cpa-xai-quota-guard version=0.3.10
 ```
 
 | 现象 | 处理 |

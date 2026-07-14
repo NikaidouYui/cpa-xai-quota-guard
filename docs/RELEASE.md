@@ -42,3 +42,28 @@ Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
 ```
 
 或：`gh auth login` / `gh auth refresh -s repo,workflow` 后 `git push`。
+
+## 禁止发布会触发商店 502 的资产
+
+CPA `pluginstore.SelectReleaseAssets` 只接受：
+
+```text
+{id}_{version}_{goos}_{goarch}.zip   # version 无 v 前缀
+checksums.txt                        # 同 Release 必备
+```
+
+zip **根目录**必须是：
+
+```text
+cpa-xai-quota-guard.so | .dll | .dylib
+```
+
+**不要**再发布仅有 `cpa-xai-quota-guard_linux_amd64.zip` 且内嵌 `linux/amd64/` 的旧布局（会 502）。
+手动发版前用下面命令自检：
+
+```bash
+# 名称
+ls cpa-xai-quota-guard_0.3.10_linux_amd64.zip checksums.txt
+# 根目录条目（只能看到库文件名，不能有 linux/）
+unzip -l cpa-xai-quota-guard_0.3.10_linux_amd64.zip
+```
