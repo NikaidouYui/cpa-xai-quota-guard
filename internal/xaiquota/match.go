@@ -484,13 +484,56 @@ func IsModelRegionUnavailable(statusCode int, body string) bool {
 	return false
 }
 
+// IsContentSafetyBlocked reports request-content safety policy failures.
+// Typical xAI payload (often still code=permission-denied):
+//
+//	{"code":"permission-denied","error":"Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_CSAM"}
+//
+// These are NOT dead credentials — the account/token is fine; the prompt or
+// attachment failed provider safety checks. Never DELETE.
+func IsContentSafetyBlocked(statusCode int, body string) bool {
+	_ = statusCode
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return false
+	}
+	lower := strings.ToLower(body)
+	strong := []string{
+		"content violates usage guidelines",
+		"violates usage guidelines",
+		"safety_check_type_csam",
+		"safety_check_type_",
+		"failed check: safety_check",
+		"failed check:safety_check",
+	}
+	for _, n := range strong {
+		if strings.Contains(lower, n) {
+			return true
+		}
+	}
+	// Also scan parsed code/message/error fields (xAI uses string "error").
+	if code, _, msg := extractErrorFields(body); code != "" || msg != "" {
+		joined := strings.ToLower(code + " " + msg)
+		for _, n := range strong {
+			if strings.Contains(joined, n) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // IsPermissionDenied reports xAI credential permission failures that should
 // trigger account deletion (not cooldown). Typical: HTTP 403 + permission-denied.
-// Region/model availability is excluded (see IsModelRegionUnavailable).
+// Region/model availability and content-safety blocks are excluded
+// (see IsModelRegionUnavailable, IsContentSafetyBlocked).
 func IsPermissionDenied(statusCode int, body string) bool {
 	body = strings.TrimSpace(body)
 	lower := strings.ToLower(body)
 	if IsModelRegionUnavailable(statusCode, body) {
+		return false
+	}
+	if IsContentSafetyBlocked(statusCode, body) {
 		return false
 	}
 	// Strong body signals first.

@@ -125,13 +125,18 @@ context canceled  + Content-Type: text/event-stream
 
 **删除信号：**
 
-- 403 + `permission-denied`  
+- 403 + `permission-denied`（**真**凭证/endpoint 拒绝，如 `Access to the chat endpoint is denied`）  
 - 401 + invalid/expired credentials / no auth context / invalid_grant revoked  
 
 **冷却信号（402 spending，与 429 独立）：**
 
 - 402 + `personal-team-blocked:spending-limit` / run out of credits / need a Grok subscription  
 - 状态 `signal=spending_limit`；巡查候选包含此类 disabled 账号  
+
+**不删号（尽管可能带 permission-denied code）：**
+
+- 区域/模型不可用：`not available in your region`  
+- **内容安全拦截**：`Content violates usage guidelines` / `SAFETY_CHECK_TYPE_*`（请求内容被拦，账号仍可用）  
 
 **永不处理：**
 

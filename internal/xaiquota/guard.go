@@ -308,6 +308,12 @@ func (g *Guard) HandleUsage(ev UsageEvent) {
 		g.appendActionFromUsage("skip_region", "passive", authIndex, "", ev.Account, "region", truncate(ev.Body, 160), ev)
 		return
 	}
+	// Content safety / usage guidelines (e.g. SAFETY_CHECK_TYPE_CSAM): request blocked, not dead account.
+	if IsContentSafetyBlocked(ev.StatusCode, ev.Body) {
+		g.logf("warn", "xAI 内容安全拦截(不删号) auth=%s code=%d body=%s", authIndex, ev.StatusCode, truncate(ev.Body, 160))
+		g.appendActionFromUsage("skip_content_safety", "passive", authIndex, "", ev.Account, "content_safety", truncate(ev.Body, 160), ev)
+		return
+	}
 	// Dead credentials: true 403 permission-denied / 401 invalid → delete immediately.
 	// 402 spending-limit is NOT deleted: plugin_auto soft-disable + patrol re-probe.
 	if IsPermissionDenied(ev.StatusCode, ev.Body) || IsInvalidCredentials(ev.StatusCode, ev.Body) {

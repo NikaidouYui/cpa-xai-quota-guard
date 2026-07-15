@@ -1,16 +1,16 @@
 # cpa-xai-quota-guard
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.12-blue.svg)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.13-blue.svg)](./CHANGELOG.md)
 [![CI](https://github.com/NikaidouYui/cpa-xai-quota-guard/actions/workflows/build.yml/badge.svg)](https://github.com/NikaidouYui/cpa-xai-quota-guard/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/NikaidouYui/cpa-xai-quota-guard?include_prereleases)](https://github.com/NikaidouYui/cpa-xai-quota-guard/releases)
 
-CLIProxyAPI **原生 Go 插件**（当前版本 **0.3.12**）：仅针对 **xAI** 登录凭证做额度/死号管控、主动巡查、管理 UI 与用量统计。
+CLIProxyAPI **原生 Go 插件**（当前版本 **0.3.13**）：仅针对 **xAI** 登录凭证做额度/死号管控、主动巡查、管理 UI 与用量统计。
 
 | | |
 |--|--|
 | 仓库 | https://github.com/NikaidouYui/cpa-xai-quota-guard |
-| 最新 Release | https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/tag/v0.3.12 |
+| 最新 Release | https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/tag/v0.3.13 |
 | 插件 ID | `cpa-xai-quota-guard` |
 | 协议 | [MIT](./LICENSE) |
 
@@ -36,12 +36,12 @@ CPA_PLUGINS_DIR=/path/to/plugins bash scripts/install.sh
 ### AI 助手安装（整段丢给 Codex / Claude / ChatGPT）
 
 完整提示词与排障见 **[docs/AI_INSTALL.md](./docs/AI_INSTALL.md)**。  
-核心要求：下载 `v0.3.12` 对应架构 zip → 放入 `plugins/<goos>/<goarch>/` → 合并配置 → 重启 CPA → 校验 `state.version == 0.3.12`。
+核心要求：下载 `v0.3.13` 对应架构 zip → 放入 `plugins/<goos>/<goarch>/` → 合并配置 → 重启 CPA → 校验 `state.version == 0.3.13`。
 
 ### Linux amd64 最短命令
 
 ```bash
-VER=v0.3.12 ZIP=cpa-xai-quota-guard_0.3.12_linux_amd64.zip
+VER=v0.3.13 ZIP=cpa-xai-quota-guard_0.3.13_linux_amd64.zip
 DEST="${CPA_PLUGINS_DIR}/linux/amd64"
 mkdir -p "$DEST"
 curl -fL "https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/${VER}/${ZIP}" -o /tmp/$ZIP
@@ -53,7 +53,7 @@ find /tmp/cpaqg -name '*.so' -exec cp -f {} "$DEST/cpa-xai-quota-guard.so" \;
 GitHub 访问不稳时加前缀：
 
 ```text
-https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.12/...
+https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/download/v0.3.13/...
 ```
 
 > **商店安装 502**：CPA 要求 zip 名为 `cpa-xai-quota-guard_{version}_{goos}_{goarch}.zip`，库文件在 zip **根目录**，且 Release 含 `checksums.txt`。详见 [docs/INSTALL.md](./docs/INSTALL.md)「商店安装返回 502」。
@@ -250,7 +250,7 @@ plugins:
 | macOS amd64 | `plugins/darwin/amd64/cpa-xai-quota-guard.dylib` |
 | Windows amd64 | `plugins/windows/amd64/cpa-xai-quota-guard.dll` |
 
-Release 资产示例：`cpa-xai-quota-guard_0.3.12_linux_amd64.zip`（见 [v0.3.12](https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/tag/v0.3.12)）。  
+Release 资产示例：`cpa-xai-quota-guard_0.3.13_linux_amd64.zip`（见 [v0.3.13](https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/tag/v0.3.13)）。  
 构建产物与 zip **不要提交进 git**；发版走 GitHub Release（tag `v*` 触发 CI）。
 
 ### 验证
@@ -260,7 +260,7 @@ curl -sS -H "X-Management-Key: <KEY>" \
   "http://127.0.0.1:8317/v0/management/cpa-xai-quota-guard/state?view=focus"
 ```
 
-期望：`"version":"0.3.12"` 且插件已启用。日志：`plugin registered ... version=0.3.12`。
+期望：`"version":"0.3.13"` 且插件已启用。日志：`plugin registered ... version=0.3.13`。
 
 ## 构建与部署
 
@@ -291,6 +291,7 @@ docker restart cli-proxy-api
 | 0.3.10 | 商店安装 502 修复：版本化 zip + 根目录库 + checksums |
 | 0.3.11 | 日额度池默认 1M→2M；CI 商店兼容打包 |
 | 0.3.12 | SQLite 状态库；CPA 禁用复查；model_capacity 短冷却 |
+| 0.3.13 | 内容安全拦截（CSAM/usage guidelines）不再误删死号 |
 
 完整记录：[CHANGELOG.md](./CHANGELOG.md)
 

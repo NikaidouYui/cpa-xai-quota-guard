@@ -403,6 +403,10 @@ func probeErrorKind(httpCode int, reason string) string {
 	if strings.Contains(low, "区域") || strings.Contains(low, "region") || strings.Contains(low, "not available in your region") {
 		return "region_block"
 	}
+	if strings.Contains(low, "内容安全") || strings.Contains(low, "usage guidelines") ||
+		strings.Contains(low, "safety_check") || strings.Contains(low, "content_safety") {
+		return "content_safety"
+	}
 	if strings.Contains(low, "cli版本") || strings.Contains(low, "cli version") {
 		return "cli_version"
 	}
@@ -1366,6 +1370,12 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 				action: probeErrorKind(code, "region"), reason: fmt.Sprintf("区域/模型不可用(不删) model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
 			}
 		}
+		if IsContentSafetyBlocked(code, bodyStr) {
+			return probeResult{
+				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+				action: probeErrorKind(code, "content_safety"), reason: fmt.Sprintf("内容安全拦截(不删) model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
+			}
+		}
 		if IsPermissionDenied(code, bodyStr) || IsInvalidCredentials(code, bodyStr) {
 			break
 		}
@@ -1612,6 +1622,12 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 		return probeResult{
 			authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
 			action: probeErrorKind(code, "region"), reason: fmt.Sprintf("区域/模型不可用(不删) model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
+		}
+	}
+	if IsContentSafetyBlocked(code, bodyStr) {
+		return probeResult{
+			authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+			action: probeErrorKind(code, "content_safety"), reason: fmt.Sprintf("内容安全拦截(不删) model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
 		}
 	}
 	if IsPermissionDenied(code, bodyStr) || IsInvalidCredentials(code, bodyStr) {

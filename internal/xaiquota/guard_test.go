@@ -254,6 +254,33 @@ func TestGuardDeletesPermissionDenied(t *testing.T) {
 		t.Fatalf("expected deleted, still have %#v", files)
 	}
 }
+
+func TestGuardDoesNotDeleteContentSafety(t *testing.T) {
+	auth := newMemAuth(AuthFile{AuthIndex: "xcsam", Name: "xai-csam.json", Provider: "xai", Disabled: false})
+	g, err := NewGuard(Config{
+		Enabled:       true,
+		ManagementURL: "http://127.0.0.1:8317",
+		ManagementKey: "test",
+	}, auth, &memLog{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same shape as production mis-delete: permission-denied + CSAM safety check, http_code 0.
+	g.HandleUsage(UsageEvent{
+		AuthIndex:  "xcsam",
+		Provider:   "xai",
+		Failed:     true,
+		StatusCode: 0,
+		Body:       `{"code":"permission-denied","error":"Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_CSAM"}`,
+	})
+	files, _ := auth.List()
+	if len(files) != 1 {
+		t.Fatalf("content safety must NOT delete credential, got %#v", files)
+	}
+	if files[0].Disabled {
+		t.Fatal("content safety must not disable either")
+	}
+}
 func TestGuardRecordsSuccessUsageTokens(t *testing.T) {
 	auth := newMemAuth(AuthFile{AuthIndex: "xs", Name: "xai-s.json", Provider: "xai", Disabled: false})
 	g, err := NewGuard(Config{

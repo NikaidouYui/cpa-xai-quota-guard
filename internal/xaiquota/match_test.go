@@ -349,3 +349,28 @@ func TestRegionPermissionDeniedNotDead(t *testing.T) {
 		t.Fatal("endpoint permission-denied must remain dead")
 	}
 }
+
+func TestContentSafetyPermissionDeniedNotDead(t *testing.T) {
+	// Production case: still code=permission-denied, but content policy — not dead account.
+	body := `{"code":"permission-denied","error":"Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_CSAM"}`
+	if !IsContentSafetyBlocked(0, body) {
+		t.Fatal("expected content safety block (http_code may be 0)")
+	}
+	if !IsContentSafetyBlocked(403, body) {
+		t.Fatal("expected content safety block on 403")
+	}
+	if IsPermissionDenied(0, body) || IsPermissionDenied(403, body) {
+		t.Fatal("content safety must NOT be classified as dead credential")
+	}
+	if IsModelRegionUnavailable(403, body) {
+		t.Fatal("content safety is not region")
+	}
+	// Real dead endpoint denial must still delete.
+	dead := `{"code":"permission-denied","error":"Access to the chat endpoint is denied. Please ensure you're using the correct credentials."}`
+	if IsContentSafetyBlocked(403, dead) {
+		t.Fatal("endpoint denied is not content safety")
+	}
+	if !IsPermissionDenied(403, dead) {
+		t.Fatal("endpoint permission-denied must remain dead")
+	}
+}

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.13
+
+- **修复误删**：`permission-denied` + `Content violates usage guidelines` / `SAFETY_CHECK_TYPE_*`（内容安全拦截）**不再当死号删除**；被动 usage 与巡查均跳过（`skip_content_safety` / `content_safety`）
+- 真死号仍删：`Access to the chat endpoint is denied` 等凭证/endpoint 拒绝
+- 版本号 / registry 同步 **0.3.13**
+
 ## 0.3.12
 
 - **SQLite 状态库**：账号所有权、用量、额度快照、动作日志和巡查快照分表持久化（`modernc.org/sqlite`）；默认 `state_path` 改为 `.sqlite`；旧 `.json` 首次启动自动导入，同目录保留 `.migrated.bak`

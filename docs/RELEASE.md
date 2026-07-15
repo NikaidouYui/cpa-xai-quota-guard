@@ -8,13 +8,13 @@
 
 ## 打 tag 触发 Release
 
-版本号与 `main.go` 的 `pluginVer`、`registry.json` 对齐，例如 `0.3.12`：
+版本号与 `main.go` 的 `pluginVer`、`registry.json` 对齐，例如 `0.3.13`：
 
 ```bash
 git checkout main
 git pull
-git tag -a v0.3.12 -m "release: v0.3.12"
-git push origin v0.3.12
+git tag -a v0.3.13 -m "release: v0.3.13"
+git push origin v0.3.13
 ```
 
 CI 在 tag `v*` 时：
@@ -63,7 +63,7 @@ cpa-xai-quota-guard.so | .dll | .dylib
 
 ```bash
 # 名称
-ls cpa-xai-quota-guard_0.3.12_linux_amd64.zip checksums.txt
+ls cpa-xai-quota-guard_0.3.13_linux_amd64.zip checksums.txt
 # 根目录条目（只能看到库文件名，不能有 linux/）
-unzip -l cpa-xai-quota-guard_0.3.12_linux_amd64.zip
+unzip -l cpa-xai-quota-guard_0.3.13_linux_amd64.zip
 ```
