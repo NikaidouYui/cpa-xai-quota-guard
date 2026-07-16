@@ -314,9 +314,13 @@ func (g *Guard) HandleUsage(ev UsageEvent) {
 		g.appendActionFromUsage("skip_content_safety", "passive", authIndex, "", ev.Account, "content_safety", truncate(ev.Body, 160), ev)
 		return
 	}
-	// Dead credentials: true 403 permission-denied / 401 invalid → delete immediately.
-	// 402 spending-limit is NOT deleted: plugin_auto soft-disable + patrol re-probe.
-	if IsPermissionDenied(ev.StatusCode, ev.Body) || IsInvalidCredentials(ev.StatusCode, ev.Body) {
+	// True 403 permission-denied → soft-disable (keep file; never auto-recover via Tick).
+	// 401 invalid credentials → delete. 402 spending-limit → plugin_auto cooldown below.
+	if IsPermissionDenied(ev.StatusCode, ev.Body) {
+		g.disableForPermissionDenied(authIndex, ev)
+		return
+	}
+	if IsInvalidCredentials(ev.StatusCode, ev.Body) {
 		g.deleteForDeadCredential(authIndex, ev)
 		return
 	}
@@ -567,6 +571,125 @@ func (g *Guard) reconcileAutoDisabledInventory() {
 	}
 }
 
+// disableForPermissionDenied soft-disables true 403 permission-denied credentials.
+// RecoverAtMS=0 so Tick never auto-enables; recheck 200 or manual enable may restore.
+func (g *Guard) disableForPermissionDenied(authIndex string, ev UsageEvent) {
+	cfg := g.Config()
+	if cfg.ManagementURL == "" || cfg.ManagementKey == "" {
+		g.logf("warn", "management 未配置，仅记录不禁用(403) auth=%s", authIndex)
+		return
+	}
+	if g.auth == nil {
+		g.logf("error", "auth lookup 未注入，跳过 403 禁用 auth=%s", authIndex)
+		return
+	}
+	current, err := g.findAuth(authIndex)
+	if err != nil {
+		g.logf("error", "403 禁用查询 auth 失败 auth=%s: %v", authIndex, err)
+		return
+	}
+	if current == nil {
+		g.logf("info", "403 禁用时账号已不存在 auth=%s", authIndex)
+		_ = g.storeRemove(authIndex)
+		return
+	}
+	account := firstNonEmpty(ev.Account, current.Account)
+	reason := truncate(ev.Body, 240)
+	existing := g.storeGet(authIndex)
+	if current.Disabled {
+		// Already disabled under our ownership with same signal → refresh reason only.
+		if existing != nil && existing.State == StateAutoDisabled && existing.DisableSource == SourcePluginAuto &&
+			existing.Owner == Owner && !existing.PreDisabled && existing.Signal == "permission_denied" {
+			rec := *existing
+			rec.Reason = reason
+			rec.LastEventHash = ev.EventHash
+			if rec.Account == "" {
+				rec.Account = account
+			}
+			if rec.FileName == "" {
+				rec.FileName = current.Name
+			}
+			_ = g.storeUpsert(rec)
+			g.appendActionFromUsage("disable", "passive", authIndex, current.Name, account, "permission_denied", reason, ev)
+			return
+		}
+		// Disabled without our ownership → mark user_manual; do not take over.
+		rec := AccountRecord{
+			AuthIndex:     authIndex,
+			FileName:      current.Name,
+			Provider:      "xai",
+			Account:       account,
+			DisableSource: SourceUserManual,
+			State:         StateUserManualDisabled,
+			DisabledAtMS:  time.Now().UnixMilli(),
+			PreDisabled:   true,
+			Reason:        "already_disabled_without_plugin_ownership",
+			Signal:        "permission_denied",
+			LastEventHash: ev.EventHash,
+		}
+		_ = g.storeUpsert(rec)
+		g.logf("info", "403 时账号已禁用且无本插件所有权，标记 user_manual auth=%s", authIndex)
+		g.appendActionFromUsage("skip_manual", "passive", authIndex, current.Name, account, "permission_denied", "already_disabled_without_plugin_ownership", ev)
+		return
+	}
+
+	nowMS := time.Now().UnixMilli()
+	rec := AccountRecord{
+		AuthIndex:     authIndex,
+		FileName:      current.Name,
+		Provider:      "xai",
+		Account:       account,
+		DisableSource: SourcePluginAuto,
+		State:         StateAutoDisabled,
+		RecoverAtMS:   0, // permanent until recheck 200 / manual enable
+		DisabledAtMS:  nowMS,
+		PreDisabled:   false,
+		Owner:         Owner,
+		Reason:        reason,
+		Signal:        "permission_denied",
+		LastEventHash: ev.EventHash,
+	}
+	if err := g.storeUpsert(rec); err != nil {
+		g.logf("error", "403 禁用前写状态失败 auth=%s: %v", authIndex, err)
+		return
+	}
+	prev, err := g.auth.SetDisabled(authIndex, true)
+	if err != nil {
+		_ = g.storeRemove(authIndex)
+		g.logf("error", "403 禁用失败 auth=%s: %v", authIndex, err)
+		return
+	}
+	if prev {
+		rec := AccountRecord{
+			AuthIndex:     authIndex,
+			FileName:      current.Name,
+			Provider:      "xai",
+			Account:       account,
+			DisableSource: SourceUserManual,
+			State:         StateUserManualDisabled,
+			DisabledAtMS:  time.Now().UnixMilli(),
+			PreDisabled:   true,
+			Reason:        "pre_disabled_race",
+			Signal:        "permission_denied",
+			LastEventHash: ev.EventHash,
+		}
+		_ = g.storeUpsert(rec)
+		g.logf("info", "403 禁用竞态：账号此前已禁用，标记 user_manual auth=%s", authIndex)
+		g.appendActionFromUsage("skip_manual", "passive", authIndex, current.Name, account, "permission_denied", "pre_disabled_race", ev)
+		return
+	}
+	g.logf("warn", "xAI 权限拒绝(403)，已禁用账号(不删除) auth=%s file=%s account=%s reason=%s",
+		authIndex, current.Name, account, truncate(ev.Body, 160))
+	g.appendActionFromUsage("disable", "passive", authIndex, current.Name, account, "permission_denied", reason, ev)
+	g.NotifyWebhook("permission_denied_disable", map[string]any{
+		"auth_index": authIndex,
+		"file_name":  current.Name,
+		"account":    account,
+		"http_code":  ev.StatusCode,
+	})
+}
+
+// deleteForDeadCredential permanently removes 401 invalid credentials.
 func (g *Guard) deleteForDeadCredential(authIndex string, ev UsageEvent) {
 	cfg := g.Config()
 	if cfg.ManagementURL == "" || cfg.ManagementKey == "" || g.auth == nil {
@@ -598,7 +721,7 @@ func (g *Guard) deleteForDeadCredential(authIndex string, ev UsageEvent) {
 			DeletedAtMS: time.Now().UnixMilli(),
 		})
 	}
-	g.logf("warn", "xAI 凭证失效/无权限，已删除账号 auth=%s file=%s account=%s reason=%s",
+	g.logf("warn", "xAI 凭证失效(401)，已删除账号 auth=%s file=%s account=%s reason=%s",
 		authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), truncate(ev.Body, 160))
 	g.appendActionFromUsage("delete", "passive", authIndex, current.Name, firstNonEmpty(ev.Account, current.Account), "dead_credential", truncate(ev.Body, 160), ev)
 	g.NotifyWebhook("dead_credential_delete", map[string]any{

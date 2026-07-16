@@ -76,15 +76,16 @@ https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/
 2. **仅** `provider=xai`（其它 provider 全部忽略）
 3. **HTTP 429 + free-usage-exhausted（rolling 24h）** → `plugin_auto` 临时禁用，到期自动恢复
 4. **HTTP 402 + spending-limit** → `plugin_auto` 冷却（signal=`spending_limit`），**不删除**；巡查探测恢复后自动启用
-5. **403 真权限 / 401 凭证失效** → **DELETE** 凭证
-6. **403 区域/模型不可用、426 CLI 版本、404/5xx/网络** → **不删**（记日志/异常分桶）
-7. 状态标签持久化：`plugin_auto` / `user_manual`；用户手动禁用永不自动启用
-8. ticker 仅恢复本插件自动禁用的账号
-9. **主动巡查**：全量扫**启用中** xAI；**仅复核**扫 plugin_auto 冷却号；网络失败有限重试
-10. 管理页：日额度池状态栏、巡查配置+操作合并卡、处理日志、账号表分页
-11. 账号套餐分类 Free/Super/Heavy（吸收 grok-panel 启发式，见 docs/THIRD_PARTY.md）
-12. **弹性并发**：`patrol_concurrency` 为硬上限；实际 worker 按 load / 探测健康伸缩
-13. 主题跟随 CPA/CPAMP 宿主（无插件独立深浅色开关）
+5. **403 真权限** → **软禁用**（保留凭证，`permission_denied`，不自动恢复）
+6. **401 凭证失效** → **DELETE** 凭证
+7. **403 区域/模型不可用、426 CLI 版本、404/5xx/网络** → **不删**（记日志/异常分桶）
+8. 状态标签持久化：`plugin_auto` / `user_manual`；用户手动禁用永不自动启用
+9. ticker 仅恢复本插件自动禁用的账号
+10. **主动巡查**：全量扫**启用中** xAI；**仅复核**扫 plugin_auto 冷却号；网络失败有限重试
+11. 管理页：日额度池状态栏、巡查配置+操作合并卡、处理日志、账号表分页
+12. 账号套餐分类 Free/Super/Heavy（吸收 grok-panel 启发式，见 docs/THIRD_PARTY.md）
+13. **弹性并发**：`patrol_concurrency` 为硬上限；实际 worker 按 load / 探测健康伸缩
+14. 主题跟随 CPA/CPAMP 宿主（无插件独立深浅色开关）
 
 ## 明确不做
 
@@ -101,13 +102,13 @@ https://ghproxy.com/https://github.com/NikaidouYui/cpa-xai-quota-guard/releases/
 | 429 free-usage | plugin_auto 冷却 + tick 恢复 | 启用号→冷却；spending 冷却号→可恢复 |
 | 429 无识别信号 | 跳过 | error，不删 |
 | 402 spending-limit | plugin_auto 冷却（不删） | 冷却；可选自动换模型再测 |
-| 403 chat endpoint / 真权限 | DELETE | DELETE |
+| 403 chat endpoint / 真权限 | **软禁用**（不删） | **软禁用** `disabled`（不删） |
 | 403 region / model unavailable | **不删** | **不删**（region_block） |
 | 401 invalid/expired | DELETE | DELETE |
 | 426 CLI version | n/a | **不删**（cli_version） |
 | 404/405/422/5xx 探测 | n/a | error 分桶，不删 |
 | 网络超时/DNS/TLS/连接 | n/a | 同模型最多 3 次重试后分桶，不删 |
-| 200 | 记 usage token | alive；spending 冷却可 reenable |
+| 200 | 记 usage token | alive；spending / permission_denied 冷却可 reenable |
 
 ## 状态栏额度口径
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.14
+
+- **403 改禁用**：真 `permission-denied`（chat endpoint denied 等）**软禁用**凭证，**不再 DELETE**；`signal=permission_denied`，`recover_at=0`（Tick 不自动恢复）
+- **401 仍删除**：`invalid credentials` 与 403 路径分离；巡查/被动均保持 DELETE
+- 巡查 403 动作记 `disabled`；复核 200 可恢复 `permission_denied` 禁用号
+- 单测：`TestGuardDisablesPermissionDenied403`、`patrol_403_test.go`（403 禁用 / 401 删除 / 200 恢复）
+- 版本号 / registry 同步 **0.3.14**
+
 ## 0.3.13
 
 - **修复误删**：`permission-denied` + `Content violates usage guidelines` / `SAFETY_CHECK_TYPE_*`（内容安全拦截）**不再当死号删除**；被动 usage 与巡查均跳过（`skip_content_safety` / `content_safety`）

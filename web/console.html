@@ -298,7 +298,7 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
 <div class="topbar">
   <div>
     <h1>xAI Quota Guard <span class="badge" id="enBadge">…</span> <span class="badge muted" id="verBadge">v0</span></h1>
-    <div class="sub">仅管控 xAI：免费额度耗尽自动冷却并到期恢复；积分耗尽冷却不删；真失效凭证才删除；手动停用永不自动启用</div>
+    <div class="sub">仅管控 xAI：免费额度耗尽自动冷却并到期恢复；积分耗尽冷却不删；403 权限拒绝禁用不删；401 凭证失效才删除；手动停用永不自动启用</div>
   </div>
   <!-- theme follows CPA/CPAMP host; no local toggle -->
 </div>
@@ -444,6 +444,7 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
       <select id="logFilterAct" onchange="onActionLogFilter()" style="min-width:120px">
         <option value="all" selected>动作:全部</option>
         <option value="cooldown">冷却</option>
+        <option value="disable">403禁用</option>
         <option value="delete">删除</option>
         <option value="recover">恢复</option>
         <option value="error">异常</option>
@@ -937,7 +938,8 @@ function humanReason(a){
     return "免费额度用尽（滚动 24 小时窗口）";
   }
   if(/not available in your region|unavailable in your region/i.test(raw+signal+errText)) return "区域/模型不可用（IP·不删号）";
-  if(/permission-denied|permission_denied/i.test(raw+signal) && /chat endpoint is denied|correct credentials/i.test(raw+errText+signal)) return "权限拒绝（将删除账号）";
+  if(/permission-denied|permission_denied/i.test(raw+signal) && /chat endpoint is denied|correct credentials/i.test(raw+errText+signal)) return "权限拒绝（将禁用账号，不删除）";
+  if(signal === "permission_denied" || /permission_denied/i.test(signal)) return "权限拒绝（已禁用，不删除）";
   if(/permission-denied|permission_denied/i.test(raw+signal)) return "权限拒绝（请核对是否区域问题）";
   if(/invalid or expired credentials|no auth context|invalid_grant|refresh token has been revoked/i.test(raw+signal)) return "凭证失效/已吊销（将删除账号）";
   if(/spending-limit|run out of credits|personal-team-blocked|spending_limit/i.test(raw+signal)) return "积分/订阅耗尽（程序冷却，巡查恢复后启用）";
@@ -950,7 +952,7 @@ function humanReason(a){
 }
 function patrolActionLabel(a){
   var m = {
-    deleted:"已删除", alive:"存活", error:"错误", cooldown:"冷却禁用", cooldown_skip:"跳过", reenabled:"已恢复启用",
+    deleted:"已删除", disabled:"403已禁用", alive:"存活", error:"错误", cooldown:"冷却禁用", cooldown_skip:"跳过", reenabled:"已恢复启用",
     reenabled_external:"CPA禁用已恢复", external_invalid:"CPA禁用失效",
     net_timeout:"网络超时", net_canceled:"请求取消", net_dns:"DNS失败", net_tls:"TLS失败", net_connect:"连接失败", net_error:"网络异常",
     patrol_abort_net:"网络中止",
@@ -1786,10 +1788,12 @@ function passiveActionLabel(a){
   switch(String(a||"")){
     case "cooldown": return "冷却";
     case "cooldown_extend": return "延长冷却";
+    case "disable": case "disabled": return "403禁用";
     case "delete": case "deleted": return "删除";
     case "recover": return "恢复";
     case "skip_manual": return "手动跳过";
     case "skip_region": return "区域跳过";
+    case "skip_content_safety": return "内容安全跳过";
     case "skip_parse": return "解析跳过";
     case "reenable": case "reenabled": return "重启用";
     default: return a||"?";
@@ -1814,11 +1818,11 @@ function renderPassiveActions(items){
   if(fp === PASSIVE_ACT_FP) return;
   PASSIVE_ACT_FP = fp;
   if(!list.length){
-    tb.innerHTML = '<tr><td colspan="7" class="muted" style="padding:.5rem">暂无被动处理记录（触发 429/402 冷却或 401/403 删除后会出现）</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" class="muted" style="padding:.5rem">暂无被动处理记录（触发 429/402 冷却、403 禁用或 401 删除后会出现）</td></tr>';
     return;
   }
   tb.innerHTML = list.map(function(x){
-    var color = x.action==="delete" ? "var(--err)" : (x.action==="recover"||x.action==="reenable" ? "var(--ok)" : (String(x.action||"").indexOf("skip")>=0 ? "var(--muted)" : "var(--warn)"));
+    var color = (x.action==="delete"||x.action==="deleted") ? "var(--err)" : (x.action==="disable"||x.action==="disabled") ? "var(--err)" : (x.action==="recover"||x.action==="reenable" ? "var(--ok)" : (String(x.action||"").indexOf("skip")>=0 ? "var(--muted)" : "var(--warn)"));
     return '<tr style="border-bottom:1px solid var(--soft)">' +
       '<td style="padding:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+fmtTime(x.time_ms)+'</td>' +
       '<td style="font-weight:600;color:'+color+';white-space:nowrap">'+esc(passiveActionLabel(x.action))+'</td>' +
@@ -1879,10 +1883,11 @@ function actionLogSourceBucket(src, reason){
 function actionLogActBucket(act){
   var a = String(act||"").toLowerCase();
   if(a==="delete"||a==="deleted") return "delete";
+  if(a==="disable"||a==="disabled") return "disable";
   if(a==="cooldown"||a.indexOf("cooldown")>=0) return "cooldown";
-  if(a==="recover"||a==="reenable"||a==="reenabled") return "recover";
+  if(a==="recover"||a==="reenable"||a==="reenabled"||a==="reenabled_external") return "recover";
   if(a==="error"||a.indexOf("net_")===0||a.indexOf("probe_")===0||a==="region_block"||a==="cli_version") return "error";
-  if(a.indexOf("skip")>=0) return "skip";
+  if(a.indexOf("skip")>=0||a==="external_invalid") return "skip";
   return a || "other";
 }
 function prettyJSONMaybe(raw){
@@ -1921,6 +1926,7 @@ function openActionDetail(idx){
   if(!x){ alert("记录不存在或已刷新"); return; }
   var actLab = (typeof passiveActionLabel==="function" ? passiveActionLabel(x.action) : null) || (typeof patrolActionLabel==="function" ? patrolActionLabel(x.action) : x.action) || x.action || "—";
   if(x.action==="delete"||x.action==="deleted") actLab = "删除";
+  if(x.action==="disable"||x.action==="disabled") actLab = "403禁用";
   if(x.action==="patrol_abort_net") actLab = "网络中止";
   var headers = x.headers || {};
   var headerKeys = Object.keys(headers);
@@ -2046,9 +2052,10 @@ function renderActionLog(deletes, actions){
     return;
   }
   tb.innerHTML = filtered.map(function(x, idx){
-    var color = (x.action==="delete"||x.action==="deleted") ? "var(--err)" : ((x.action==="recover"||x.action==="reenable"||String(x.action||"").indexOf("reenabled")===0) ? "var(--ok)" : (String(x.action||"").indexOf("skip")>=0||x.action==="external_invalid" ? "var(--muted)" : "var(--warn)"));
+    var color = (x.action==="delete"||x.action==="deleted"||x.action==="disable"||x.action==="disabled") ? "var(--err)" : ((x.action==="recover"||x.action==="reenable"||String(x.action||"").indexOf("reenabled")===0) ? "var(--ok)" : (String(x.action||"").indexOf("skip")>=0||x.action==="external_invalid" ? "var(--muted)" : "var(--warn)"));
     var actLab = (typeof passiveActionLabel==="function" ? passiveActionLabel(x.action) : null) || (typeof patrolActionLabel==="function" ? patrolActionLabel(x.action) : x.action) || x.action || "—";
     if(x.action==="delete"||x.action==="deleted") actLab = "删除";
+    if(x.action==="disable"||x.action==="disabled") actLab = "403禁用";
     if(x.action==="patrol_abort_net") actLab = "网络中止";
     var reasonText = x.reason || x.signal || "（无说明，点开看元数据）";
     var hasSnap = !!(x.body || (x.headers && Object.keys(x.headers).length));

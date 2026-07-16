@@ -524,7 +524,8 @@ func IsContentSafetyBlocked(statusCode int, body string) bool {
 }
 
 // IsPermissionDenied reports xAI credential permission failures that should
-// trigger account deletion (not cooldown). Typical: HTTP 403 + permission-denied.
+// soft-disable the account (not delete; RecoverAtMS=0, no Tick auto-enable).
+// Typical: HTTP 403 + permission-denied.
 // Region/model availability and content-safety blocks are excluded
 // (see IsModelRegionUnavailable, IsContentSafetyBlocked).
 func IsPermissionDenied(statusCode int, body string) bool {

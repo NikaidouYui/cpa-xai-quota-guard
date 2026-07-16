@@ -192,7 +192,7 @@ type probeResult struct {
 	authIndex string
 	fileName  string
 	account   string
-	action    string // alive|deleted|error|cooldown|cooldown_skip|reenabled*|external_invalid|net_*|probe_*|region_block|cli_version
+	action    string // alive|deleted|disabled|error|cooldown|cooldown_skip|reenabled*|external_invalid|net_*|probe_*|region_block|cli_version
 	reason    string
 	httpCode  int
 	modelUsed string
@@ -202,7 +202,7 @@ type probeResult struct {
 // isTransportNetFail reports probe outcomes that indicate local/path network issues
 // (not xAI business errors like 401/403/429/402).
 func isTransportNetFail(action string, httpCode int) bool {
-	if action == "patrol_abort_net" || action == "alive" || action == "deleted" || action == "cooldown" || action == "reenabled" {
+	if action == "patrol_abort_net" || action == "alive" || action == "deleted" || action == "disabled" || action == "cooldown" || action == "reenabled" {
 		return false
 	}
 	if httpCode <= 0 {
@@ -1140,7 +1140,7 @@ func (g *Guard) recordProbeResult(r probeResult) {
 		g.patrol.totalErrors++
 	case "cooldown_skip", "external_invalid":
 		g.patrol.totalSkipped++
-	case "cooldown":
+	case "cooldown", "disabled":
 		g.patrol.totalCooldown++
 		if r.httpCode == http.StatusTooManyRequests {
 			g.patrol.total429CD++
@@ -1185,7 +1185,7 @@ func (g *Guard) recordProbeResult(r probeResult) {
 
 	// Persist material actions into durable action_history (survives restart).
 	switch entry.Action {
-	case "deleted", "cooldown", "reenabled", "reenabled_external", "external_invalid", "error",
+	case "deleted", "disabled", "cooldown", "reenabled", "reenabled_external", "external_invalid", "error",
 		"net_timeout", "net_canceled", "net_dns", "net_tls", "net_connect", "net_error",
 		"probe_http_4xx", "probe_http_5xx", "probe_unprocessable", "region_block", "cli_version",
 		"patrol_abort_net":
@@ -1393,14 +1393,16 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 	_ = lastErr
 
 	// Outcomes after model tries:
-	// - 200: alive; re-enable if spending_limit cooldown
+	// - 200: alive; re-enable if spending_limit / permission_denied cooldown
 	// - 429 free-usage: cooldown (enabled) or re-enable spending_limit; never delete
 	// - 402 spending: soft-disable (after auto-switch exhausted if enabled)
-	// - 403/401 dead: delete
+	// - 403 permission-denied: soft-disable (not delete); 401 invalid: delete
 	// - region/404/5xx: error, no delete
 	reenableIfSpending := func(reason string) probeResult {
-		if live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
-			live.Signal == "spending_limit" && live.Owner == Owner && !live.PreDisabled {
+		canReenable := live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
+			live.Owner == Owner && !live.PreDisabled &&
+			(live.Signal == "spending_limit" || live.Signal == "permission_denied")
+		if canReenable {
 			if g.auth != nil {
 				if _, err := g.auth.SetDisabled(f.AuthIndex, false); err != nil {
 					return probeResult{
@@ -1409,11 +1411,16 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 					}
 				}
 			}
+			sig := live.Signal
 			_ = g.storeMarkActive(f.AuthIndex)
-			g.logf("info", "patrol 探测恢复，已启用 spending_limit 账号 auth=%s reason=%s model=%s tried=%v", f.AuthIndex, reason, model, tried)
-			g.NotifyWebhook("patrol_spending_recovered", map[string]any{
+			g.logf("info", "patrol 探测恢复，已启用 %s 账号 auth=%s reason=%s model=%s tried=%v", sig, f.AuthIndex, reason, model, tried)
+			hook := "patrol_spending_recovered"
+			if sig == "permission_denied" {
+				hook = "patrol_permission_recovered"
+			}
+			g.NotifyWebhook(hook, map[string]any{
 				"auth_index": f.AuthIndex, "file_name": f.Name, "account": f.Account,
-				"http_code": code, "reason": reason, "model": model, "tried": tried,
+				"http_code": code, "reason": reason, "model": model, "tried": tried, "signal": sig,
 			})
 			return probeResult{
 				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
@@ -1630,7 +1637,73 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 			action: probeErrorKind(code, "content_safety"), reason: fmt.Sprintf("内容安全拦截(不删) model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
 		}
 	}
-	if IsPermissionDenied(code, bodyStr) || IsInvalidCredentials(code, bodyStr) {
+	// True 403 permission-denied: soft-disable (keep credential file).
+	if IsPermissionDenied(code, bodyStr) {
+		if externalReview {
+			return probeResult{
+				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+				action: "external_invalid", reason: fmt.Sprintf("CPA 禁用复查确认权限拒绝，保持禁用且不接管 model=%s · %s", model, truncate(bodyStr, 180)), httpCode: code, modelUsed: model,
+			}
+		}
+		// Already under our permanent permission disable → keep.
+		if live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
+			live.Signal == "permission_denied" && live.Owner == Owner && !live.PreDisabled {
+			rec := *live
+			rec.LastProbeModel = model
+			rec.Reason = truncate(bodyStr, 240)
+			_ = g.storeUpsert(rec)
+			return probeResult{
+				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+				action: "disabled", reason: fmt.Sprintf("403 permission-denied 保持禁用 model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
+			}
+		}
+		nowMS := time.Now().UnixMilli()
+		newRec := AccountRecord{
+			AuthIndex: f.AuthIndex, FileName: f.Name, Provider: "xai", Account: f.Account,
+			DisableSource: SourcePluginAuto, State: StateAutoDisabled,
+			RecoverAtMS: 0, DisabledAtMS: nowMS,
+			LastProbeModel: model,
+			PreDisabled:    false, Owner: Owner, Reason: truncate(bodyStr, 240), Signal: "permission_denied",
+		}
+		if err := g.storeUpsert(newRec); err != nil {
+			return probeResult{authIndex: f.AuthIndex, fileName: f.Name, account: f.Account, action: "error", reason: fmt.Sprintf("403 disable state persist failed: %v", err), httpCode: code, modelUsed: model}
+		}
+		rollbackState := func() {
+			if live != nil {
+				_ = g.storeUpsert(*live)
+			} else {
+				_ = g.storeRemove(f.AuthIndex)
+			}
+		}
+		if g.auth != nil && !f.Disabled {
+			prev, err := g.auth.SetDisabled(f.AuthIndex, true)
+			if err != nil {
+				rollbackState()
+				return probeResult{
+					authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+					action: "error", reason: fmt.Sprintf("403 disable failed: %v", err), httpCode: code, modelUsed: model,
+				}
+			}
+			if prev {
+				rollbackState()
+				return probeResult{
+					authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+					action: "cooldown_skip", reason: "already disabled externally", httpCode: code, modelUsed: model,
+				}
+			}
+		}
+		g.logf("warn", "patrol 403 权限拒绝，已禁用(不删除) auth=%s file=%s model=%s", f.AuthIndex, f.Name, model)
+		g.NotifyWebhook("patrol_permission_denied_disable", map[string]any{
+			"auth_index": f.AuthIndex, "file_name": f.Name, "account": f.Account,
+			"http_code": code, "reason": truncate(bodyStr, 160), "model": model,
+		})
+		return probeResult{
+			authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+			action: "disabled", reason: fmt.Sprintf("403 permission-denied model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
+		}
+	}
+	// 401 invalid credentials: still DELETE.
+	if IsInvalidCredentials(code, bodyStr) {
 		if externalReview {
 			return probeResult{
 				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
@@ -1650,7 +1723,7 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 				Reason: fmt.Sprintf("patrol: %s", truncate(bodyStr, 240)), DeletedAtMS: time.Now().UnixMilli(),
 			})
 		}
-		g.logf("warn", "patrol 删除死号 auth=%s file=%s code=%d reason=%s", f.AuthIndex, f.Name, code, truncate(bodyStr, 120))
+		g.logf("warn", "patrol 删除 401 死号 auth=%s file=%s code=%d reason=%s", f.AuthIndex, f.Name, code, truncate(bodyStr, 120))
 		g.NotifyWebhook("patrol_dead_credential_delete", map[string]any{
 			"auth_index": f.AuthIndex, "file_name": f.Name, "account": f.Account,
 			"http_code": code, "reason": truncate(bodyStr, 160),

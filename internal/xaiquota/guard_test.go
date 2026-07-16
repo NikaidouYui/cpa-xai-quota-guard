@@ -232,7 +232,7 @@ func TestGuardCooldownModelCapacity(t *testing.T) {
 	}
 }
 
-func TestGuardDeletesPermissionDenied(t *testing.T) {
+func TestGuardDisablesPermissionDenied403(t *testing.T) {
 	auth := newMemAuth(AuthFile{AuthIndex: "x403", Name: "xai-403.json", Provider: "xai", Disabled: false})
 	g, err := NewGuard(Config{
 		Enabled:       true,
@@ -250,8 +250,27 @@ func TestGuardDeletesPermissionDenied(t *testing.T) {
 		Body:       `{"code":"permission-denied","error":"Access to the chat endpoint is denied."}`,
 	})
 	files, _ := auth.List()
-	if len(files) != 0 {
-		t.Fatalf("expected deleted, still have %#v", files)
+	if len(files) != 1 {
+		t.Fatalf("403 must NOT delete credential, got %#v", files)
+	}
+	if !files[0].Disabled {
+		t.Fatal("expected soft-disabled for 403 permission-denied")
+	}
+	rec := g.storeGet("x403")
+	if rec == nil || rec.State != StateAutoDisabled || rec.DisableSource != SourcePluginAuto {
+		t.Fatalf("expected auto_disabled plugin_auto, got %#v", rec)
+	}
+	if rec.Signal != "permission_denied" {
+		t.Fatalf("signal=%q want permission_denied", rec.Signal)
+	}
+	if rec.RecoverAtMS != 0 {
+		t.Fatalf("permission_denied must not auto-recover: recover_at_ms=%d", rec.RecoverAtMS)
+	}
+	// Tick must not re-enable permanent 403 disable.
+	g.Tick()
+	files, _ = auth.List()
+	if !files[0].Disabled {
+		t.Fatal("Tick must not re-enable permission_denied")
 	}
 }
 
