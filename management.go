@@ -71,7 +71,7 @@ func buildManagementRegistration() managementRegistration {
 			{
 				Path:        "/index.html",
 				Menu:        "xAI Quota Guard",
-				Description: "xAI 短时额度自动禁用、到期恢复与 permission-denied 删除",
+				Description: "xAI 短时额度自动禁用、到期恢复；403 软禁用；手动测试/删除 403",
 			},
 		},
 		Routes: []managementRoute{
@@ -88,6 +88,8 @@ func buildManagementRegistration() managementRegistration {
 			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol", Description: "全量巡查：仅当前启用的 xAI 凭证"},
 			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/spending", Description: "仅复核：plugin_auto 冷却号(429 free-usage 与 402 spending)"},
 			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/cpa-disabled", Description: "复查 CPA 禁用账号：200 恢复，429/402 纳入追踪，失效保持禁用"},
+			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/permission-denied", Description: "测试/删除 403：仅扫 permission_denied 禁用号；200 恢复，仍 403/401 删除"},
+			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/incremental", Description: "增量巡检：启用号按游标分批探测，完成推进游标"},
 			{Method: "GET", Path: "/cpa-xai-quota-guard/patrol/status", Description: "巡查状态与日志"},
 			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/stop", Description: "停止当前巡查"},
 			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/config", Description: "保存定时巡查配置"},
@@ -196,6 +198,10 @@ func dispatchAPI(req managementRequest, action string) ([]byte, error) {
 		return patrolSpendingResponse(req)
 	case "patrol/cpa-disabled":
 		return patrolCPADisabledResponse(req)
+	case "patrol/permission-denied", "patrol/403":
+		return patrolPermissionDeniedResponse(req)
+	case "patrol/incremental":
+		return patrolIncrementalResponse(req)
 	case "patrol/status":
 		return patrolStatusResponse(req)
 	case "patrol/stop":
@@ -834,6 +840,32 @@ func patrolCPADisabledResponse(req managementRequest) ([]byte, error) {
 	return jsonResponse(map[string]any{
 		"ok":     true,
 		"scope":  "cpa_disabled",
+		"patrol": status,
+	})
+}
+
+func patrolPermissionDeniedResponse(req managementRequest) ([]byte, error) {
+	if req.Method != http.MethodPost {
+		return jsonResponse(map[string]any{"ok": false, "error": "POST required"})
+	}
+	g := guard()
+	status := g.PatrolRunPermissionDenied()
+	return jsonResponse(map[string]any{
+		"ok":     true,
+		"scope":  "permission_denied",
+		"patrol": status,
+	})
+}
+
+func patrolIncrementalResponse(req managementRequest) ([]byte, error) {
+	if req.Method != http.MethodPost {
+		return jsonResponse(map[string]any{"ok": false, "error": "POST required"})
+	}
+	g := guard()
+	status := g.PatrolRunIncremental()
+	return jsonResponse(map[string]any{
+		"ok":     true,
+		"scope":  "incremental",
 		"patrol": status,
 	})
 }

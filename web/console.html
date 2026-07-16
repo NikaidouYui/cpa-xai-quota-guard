@@ -368,7 +368,7 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
       <label style="font-size:.85rem">并发上限
         <input id="cfgPatrolCon" title="并发硬上限。实际线程在上限内按 load1 与超时/网络错误率弹性伸缩（空闲爬升至上限，压力收缩）" type="number" min="1" step="1" style="width:60px" placeholder="上限24·弹性">
       </label>
-      <label style="font-size:.85rem">每轮上限(0=不限·默认)
+      <label style="font-size:.85rem" title="全量：>0 时截断本轮前 N 个（不轮转）。增量巡检：每批数量，0=默认 100，完成后推进游标">每轮上限(0=增量默认100)
         <input id="cfgPatrolBatch" type="number" min="0" step="1" style="width:60px" placeholder="0">
       </label>
       <button class="primary" onclick="savePatrolConfig()">保存配置</button>
@@ -397,8 +397,10 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
     <hr style="border:none;border-top:1px solid var(--border);margin:.7rem 0">
     <div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center">
       <button id="patrolBtn" class="warn" onclick="patrolStart()" title="全量：只扫当前启用中的 xAI（跳过全部已禁用，含冷却号）">全量巡查</button>
-      <button id="patrolSpendBtn" class="primary" onclick="patrolSpendingStart()" title="仅复核：只扫 plugin_auto 已禁用冷却号（429 free-usage 与 402 spending；不含启用中）">仅复查冷却号</button>
+      <button id="patrolIncBtn" class="primary" onclick="patrolIncrementalStart()" title="增量：只扫启用号的下一批（按 auth_index 排序+持久游标；每轮数量=每轮上限，0 时默认 100）；正常完成后推进游标">增量巡检</button>
+      <button id="patrolSpendBtn" onclick="patrolSpendingStart()" title="仅复核：只扫 plugin_auto 已禁用冷却号（429 free-usage 与 402 spending；不含启用中）">仅复查冷却号</button>
       <button id="patrolCPADisabledBtn" onclick="patrolCPADisabledStart()" title="手动复查 CPA 禁用且无插件所有权的账号；200 恢复，429/402 保持禁用并纳入追踪，401/403 保持禁用且不删除">复查 CPA 禁用</button>
+      <button id="patrol403Btn" class="off" onclick="patrolPermissionDeniedStart()" title="仅扫本插件标记 permission_denied(403) 的禁用号：先探测；200 恢复启用；仍 403/401 则删除凭证">测试/删除403</button>
       <button id="patrolStopBtn" class="off" onclick="patrolStop()" style="display:none">停止巡查</button>
       <div class="patrol-status-wrap"><span id="patrolStatus" class="muted" style="font-size:.84rem">空闲</span><span id="patrolStatusLine2"></span></div>
     </div>
@@ -2195,10 +2197,13 @@ function paintPatrol(p, r){
       document.getElementById("patrolBtn").disabled = true;
     } else {
     line1 = "巡查中 " + probed + "/" + (candidates||"?");
+    var runScope = patrolScopeLabel(p.scope||"");
+    if(runScope && p.scope && p.scope!=="all") line1 = runScope + " " + probed + "/" + (candidates||"?");
     if(thr) line1 += " · " + thr;
     if(rate > 0) line1 += " · " + rate.toFixed(1) + "/s";
     if(eta) line1 += " · 剩 " + eta;
     var d2 = [];
+    if(p.scope==="incremental" && p.inc_pool_size) d2.push("池 " + p.inc_pool_size);
     if(durS > 0) d2.push("已用 " + formatPatrolDur(durS));
     if(load1 > 0) d2.push("load " + load1.toFixed(2));
     if(scaleLabel) d2.push(scaleLabel);
@@ -2206,10 +2211,9 @@ function paintPatrol(p, r){
     line2 = d2.join(" · ");
     st.style.color = "var(--accent)";
     if(st2) st2.style.color = "";
-    document.getElementById("patrolBtn").textContent = "巡查中...";
-    document.getElementById("patrolBtn").disabled = true;
-    var psb=document.getElementById("patrolSpendBtn"); if(psb) psb.disabled=true;
-    var pcb=document.getElementById("patrolCPADisabledBtn"); if(pcb) pcb.disabled=true;
+    setPatrolActionButtonsBusy(true);
+    if(document.getElementById("patrolBtn")) document.getElementById("patrolBtn").textContent = "巡查中...";
+    if(p.scope==="incremental"){ var ib=document.getElementById("patrolIncBtn"); if(ib) ib.textContent="增量中..."; }
     }
     document.getElementById("patrolStopBtn").style.display = "";
     var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
@@ -2217,10 +2221,13 @@ function paintPatrol(p, r){
     var errRaw = (p.last_error||"").trim();
     var err = errRaw ? ("⚠ " + errRaw) : "";
     var aborted = !!errRaw && (errRaw.indexOf("中止")>=0 || errRaw.indexOf("连通")>=0 || errRaw.indexOf("网络")>=0 || errRaw.indexOf("代理")>=0);
-    var scope = p.scope ? (p.scope==="spending_only"?"冷却复核":(p.scope==="cpa_disabled"?"CPA 禁用复查":"全量启用")) : "";
+    var scope = patrolScopeLabel(p.scope||"");
     if(probed===0 && !p.started_at_ms && !p.completed_at_ms){
       line1 = "空闲 · 等待手动/定时巡查";
-      line2 = thr ? ("上次并发 " + thr) : "";
+      var idleBits = [];
+      if(thr) idleBits.push("上次并发 " + thr);
+      if(p.inc_cursor) idleBits.push("增量游标 " + String(p.inc_cursor).slice(0,12));
+      line2 = idleBits.join(" · ");
       st.style.color = "var(--muted)";
     } else if(aborted){
       line1 = "已中止 · 网络/代理异常";
@@ -2229,12 +2236,7 @@ function paintPatrol(p, r){
       line2 = errRaw;
       st.style.color = "var(--err)";
       if(st2) st2.style.color = "var(--err)";
-      // unlock so user can re-run after network recovers
-      try{
-        var b=document.getElementById("patrolBtn"); if(b){ b.disabled=false; b.textContent="启动巡查"; }
-        var sb=document.getElementById("patrolSpendBtn"); if(sb){ sb.disabled=false; sb.textContent="仅复查冷却号"; }
-        var cb=document.getElementById("patrolCPADisabledBtn"); if(cb){ cb.disabled=false; cb.textContent="复查 CPA 禁用"; }
-      }catch(e){}
+      try{ unlockPatrolActionButtons(); }catch(e){}
     } else {
       // totals only in summary chips — avoid dual summary strings
       line1 = "已完成";
@@ -2243,6 +2245,12 @@ function paintPatrol(p, r){
       if(rate > 0) line1 += " · " + rate.toFixed(1) + "/s";
       if(thr) line1 += " · " + thr;
       var d2b = [];
+      if(p.scope==="incremental"){
+        if(p.inc_pool_size) d2b.push("池 " + p.inc_pool_size);
+        if(p.inc_batch_limit) d2b.push("批 " + p.inc_batch_limit);
+        if(p.inc_next_cursor) d2b.push("下轮游标 " + String(p.inc_next_cursor).slice(0,12));
+        else if(p.inc_cursor===""||p.inc_next_cursor==="") d2b.push("游标已回绕");
+      }
       if(load1 > 0) d2b.push("load " + load1.toFixed(2));
       if(scaleLabel) d2b.push(scaleLabel);
       if(p.saved_at_ms) d2b.push("已持久化");
@@ -2251,10 +2259,7 @@ function paintPatrol(p, r){
       st.style.color = "var(--muted)";
       if(st2) st2.style.color = "";
     }
-    document.getElementById("patrolBtn").textContent = "启动巡查";
-    document.getElementById("patrolBtn").disabled = false;
-    var sb2=document.getElementById("patrolSpendBtn"); if(sb2){ sb2.disabled=false; sb2.textContent="仅复查冷却号"; }
-    var cb2=document.getElementById("patrolCPADisabledBtn"); if(cb2){ cb2.disabled=false; cb2.textContent="复查 CPA 禁用"; }
+    unlockPatrolActionButtons();
     document.getElementById("patrolStopBtn").style.display = "none";
   }
   st.textContent = line1;
@@ -2288,78 +2293,130 @@ function paintPatrol(p, r){
   }
   // delete history intentionally not updated from patrol poll (stable UI)
 }
+function setPatrolActionButtonsBusy(busy){
+  var main=document.getElementById("patrolBtn");
+  var inc=document.getElementById("patrolIncBtn");
+  var spend=document.getElementById("patrolSpendBtn");
+  var cpa=document.getElementById("patrolCPADisabledBtn");
+  var p403=document.getElementById("patrol403Btn");
+  if(main) main.disabled=!!busy;
+  if(inc) inc.disabled=!!busy;
+  if(spend) spend.disabled=!!busy;
+  if(cpa) cpa.disabled=!!busy;
+  if(p403) p403.disabled=!!busy;
+}
+function unlockPatrolActionButtons(){
+  setPatrolActionButtonsBusy(false);
+  var main=document.getElementById("patrolBtn"); if(main) main.textContent="启动巡查";
+  var inc=document.getElementById("patrolIncBtn"); if(inc) inc.textContent="增量巡检";
+  var spend=document.getElementById("patrolSpendBtn"); if(spend) spend.textContent="仅复查冷却号";
+  var cpa=document.getElementById("patrolCPADisabledBtn"); if(cpa) cpa.textContent="复查 CPA 禁用";
+  var p403=document.getElementById("patrol403Btn"); if(p403) p403.textContent="测试/删除403";
+}
+function patrolScopeLabel(scope){
+  if(scope==="spending_only") return "冷却复核";
+  if(scope==="cpa_disabled") return "CPA 禁用复查";
+  if(scope==="permission_denied") return "测试/删除403";
+  if(scope==="incremental") return "增量巡检";
+  if(scope==="all"||scope==="") return "全量启用";
+  return scope||"";
+}
+async function patrolIncrementalStart(){
+  var btn = document.getElementById("patrolIncBtn");
+  setPatrolActionButtonsBusy(true);
+  if(btn){ btn.textContent = "增量中..."; }
+  document.getElementById("patrolStopBtn").style.display = "";
+  var pp=document.getElementById("patrolProgress"); if(pp){ pp.hidden=false; pp.style.display=""; }
+  document.getElementById("patrolStatus").textContent = "启动增量巡检...";
+  try {
+    var r = await api("patrol/incremental", {method:"POST"});
+    if(!r || !r.ok){ alert("增量巡检启动失败: "+JSON.stringify(r&&r.error||r)); unlockPatrolActionButtons(); return; }
+    paintPatrol(extractPatrol(r), r);
+    try{ if(PATROL_POLL) clearInterval(PATROL_POLL); }catch(e){}
+    PATROL_POLL = setInterval(patrolPoll, 1200);
+    patrolPoll();
+  } catch(e){
+    alert("增量巡检异常: "+(e&&e.message?e.message:e));
+    unlockPatrolActionButtons();
+  }
+}
 async function patrolSpendingStart(){
   var btn = document.getElementById("patrolSpendBtn");
-  var main = document.getElementById("patrolBtn");
-  var cpaBtn = document.getElementById("patrolCPADisabledBtn");
-  if(btn){ btn.disabled = true; btn.textContent = "复查中..."; }
-  if(main) main.disabled = true;
-  if(cpaBtn) cpaBtn.disabled = true;
+  setPatrolActionButtonsBusy(true);
+  if(btn){ btn.textContent = "复查中..."; }
   document.getElementById("patrolStopBtn").style.display = "";
   var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
   var pp=document.getElementById("patrolProgress"); if(pp){ pp.hidden=false; pp.style.display=""; }
   document.getElementById("patrolStatus").textContent = "启动冷却复核...";
   try {
     var r = await api("patrol/spending", {method:"POST"});
-    if(!r || !r.ok){ alert("冷却复查启动失败: "+JSON.stringify(r&&r.error||r)); if(btn){btn.disabled=false;btn.textContent="仅复查冷却号";} if(main) main.disabled=false; return; }
+    if(!r || !r.ok){ alert("冷却复查启动失败: "+JSON.stringify(r&&r.error||r)); unlockPatrolActionButtons(); return; }
     paintPatrol(extractPatrol(r), r);
     try{ if(PATROL_POLL) clearInterval(PATROL_POLL); }catch(e){}
     PATROL_POLL = setInterval(patrolPoll, 1200);
     patrolPoll();
   } catch(e){
     alert("冷却复查异常: "+(e&&e.message?e.message:e));
-    if(btn){btn.disabled=false;btn.textContent="仅复查冷却号";}
-    if(main) main.disabled=false;
+    unlockPatrolActionButtons();
   }
 }
 async function patrolCPADisabledStart(){
   var btn = document.getElementById("patrolCPADisabledBtn");
-  var main = document.getElementById("patrolBtn");
-  var spend = document.getElementById("patrolSpendBtn");
   if(!confirm("复查所有 CPA 已禁用且未被插件接管的 xAI 账号？\n\n200 将自动启用；429/402 保持禁用并纳入追踪；401/403 保持禁用且不删除。")) return;
-  if(btn){ btn.disabled=true; btn.textContent="复查中..."; }
-  if(main) main.disabled=true;
-  if(spend) spend.disabled=true;
+  setPatrolActionButtonsBusy(true);
+  if(btn){ btn.textContent="复查中..."; }
   document.getElementById("patrolStopBtn").style.display="";
   var pp=document.getElementById("patrolProgress"); if(pp){pp.hidden=false;pp.style.display="";}
   document.getElementById("patrolStatus").textContent="启动 CPA 禁用复查...";
   try{
     var r=await api("patrol/cpa-disabled",{method:"POST"});
-    if(!r||!r.ok){alert("CPA 禁用复查启动失败: "+JSON.stringify(r&&r.error||r));return;}
+    if(!r||!r.ok){alert("CPA 禁用复查启动失败: "+JSON.stringify(r&&r.error||r)); unlockPatrolActionButtons(); return;}
     paintPatrol(extractPatrol(r),r);
     try{if(PATROL_POLL)clearInterval(PATROL_POLL);}catch(e){}
     PATROL_POLL=setInterval(patrolPoll,1200);
     patrolPoll();
   }catch(e){
     alert("CPA 禁用复查异常: "+(e&&e.message?e.message:e));
-  }finally{
-    if(!PATROL_POLL){
-      if(btn){btn.disabled=false;btn.textContent="复查 CPA 禁用";}
-      if(main)main.disabled=false;
-      if(spend)spend.disabled=false;
-    }
+    unlockPatrolActionButtons();
+  }
+}
+async function patrolPermissionDeniedStart(){
+  var btn = document.getElementById("patrol403Btn");
+  if(!confirm("测试/删除 403（permission_denied）？\n\n范围：仅本插件已标记 permission_denied 的禁用号\n\n• 探测 200 → 恢复启用\n• 仍 403 权限拒绝 / 401 失效 → 删除凭证\n• 其它错误 → 保持禁用\n\n此操作会真实删除确认失效的账号，请确认。")) return;
+  setPatrolActionButtonsBusy(true);
+  if(btn){ btn.textContent="测试中..."; }
+  document.getElementById("patrolStopBtn").style.display="";
+  var pp=document.getElementById("patrolProgress"); if(pp){pp.hidden=false;pp.style.display="";}
+  document.getElementById("patrolStatus").textContent="启动 403 测试/删除...";
+  try{
+    var r=await api("patrol/permission-denied",{method:"POST"});
+    if(!r||!r.ok){alert("403 测试/删除启动失败: "+JSON.stringify(r&&r.error||r)); unlockPatrolActionButtons(); return;}
+    paintPatrol(extractPatrol(r),r);
+    try{if(PATROL_POLL)clearInterval(PATROL_POLL);}catch(e){}
+    PATROL_POLL=setInterval(patrolPoll,1200);
+    patrolPoll();
+  }catch(e){
+    alert("403 测试/删除异常: "+(e&&e.message?e.message:e));
+    unlockPatrolActionButtons();
   }
 }
 async function patrolStart(){
   var btn = document.getElementById("patrolBtn");
-  btn.disabled = true;
-  btn.textContent = "巡查中...";
-  var spendBtn=document.getElementById("patrolSpendBtn"); if(spendBtn) spendBtn.disabled=true;
-  var cpaBtn=document.getElementById("patrolCPADisabledBtn"); if(cpaBtn) cpaBtn.disabled=true;
+  setPatrolActionButtonsBusy(true);
+  if(btn) btn.textContent = "巡查中...";
   document.getElementById("patrolStopBtn").style.display = "";
   var pp0=document.getElementById("patrolProgress"); if(pp0){ pp0.hidden=false; pp0.style.display=""; }
   document.getElementById("patrolStatus").textContent = "启动中...";
   try {
     var r = await api("patrol", {method:"POST"});
-    if(!r || !r.ok){ alert("巡查启动失败: "+JSON.stringify(r&&r.error||r)); btn.disabled=false; btn.textContent="启动巡查"; return; }
+    if(!r || !r.ok){ alert("巡查启动失败: "+JSON.stringify(r&&r.error||r)); unlockPatrolActionButtons(); return; }
     paintPatrol(extractPatrol(r), r);
     try{ if(PATROL_POLL) clearInterval(PATROL_POLL); }catch(e){}
     PATROL_POLL = setInterval(patrolPoll, 1200);
     patrolPoll();
   } catch(e){
     alert("巡查启动异常: "+(e&&e.message?e.message:e));
-    btn.disabled = false;
-    btn.textContent = "启动巡查";
+    unlockPatrolActionButtons();
   }
 }
 async function patrolStop(){

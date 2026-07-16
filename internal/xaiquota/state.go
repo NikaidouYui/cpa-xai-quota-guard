@@ -193,8 +193,46 @@ CREATE TABLE IF NOT EXISTS quota_auth (auth_index TEXT PRIMARY KEY, data BLOB NO
 CREATE TABLE IF NOT EXISTS delete_history (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS action_history (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS patrol_snapshot (id INTEGER PRIMARY KEY CHECK (id=1), data BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `)
 	return err
+}
+
+const kvIncrementalCursor = "patrol_incremental_cursor"
+
+func (s *Store) GetKV(key string) string {
+	if s == nil || s.db == nil || strings.TrimSpace(key) == "" {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var v string
+	if s.db.QueryRow(`SELECT value FROM kv WHERE key=?`, key).Scan(&v) != nil {
+		return ""
+	}
+	return v
+}
+
+func (s *Store) SetKV(key, value string) error {
+	if s == nil || s.db == nil {
+		return errors.New("store nil")
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("empty kv key")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO kv(key,value) VALUES(?,?)`, key, value)
+	return err
+}
+
+func (s *Store) GetIncrementalCursor() string {
+	return s.GetKV(kvIncrementalCursor)
+}
+
+func (s *Store) SetIncrementalCursor(cursor string) error {
+	return s.SetKV(kvIncrementalCursor, cursor)
 }
 
 func importLegacy(s *Store, path string) error {

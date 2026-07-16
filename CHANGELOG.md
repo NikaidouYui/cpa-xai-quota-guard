@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.15
+
+- **测试/删除 403**：新增手动巡查范围 `patrol/permission-denied`（UI「测试/删除403」）
+  - 仅扫本插件 `signal=permission_denied` 的禁用号
+  - 探测 **200** → 恢复启用
+  - 仍 **403 权限拒绝 / 401** → **删除**凭证（被动/全量巡查仍只禁用 403，不自动删）
+- **增量巡检**：`patrol/incremental`（UI「增量巡检」）
+  - 仅启用中的 xAI；按 `auth_index` 稳定排序；每批数量=`patrol_batch_size`（0 默认 100）
+  - 游标持久化到 state `kv`；**正常完成**后推进，中止/停止不推进
+  - 与「全量」的 batch 截断不同：全量仍只截前 N，增量会轮转覆盖全池
+- 版本号 / registry 同步 **0.3.15**
+
 ## 0.3.14
 
 - **403 改禁用**：真 `permission-denied`（chat endpoint denied 等）**软禁用**凭证，**不再 DELETE**；`signal=permission_denied`，`recover_at=0`（Tick 不自动恢复）

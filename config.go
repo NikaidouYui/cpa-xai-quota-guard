@@ -32,7 +32,7 @@ func configFields() []pluginapi.ConfigField {
 		{Name: "patrol_enabled", Type: pluginapi.ConfigFieldTypeBoolean, Description: "启用定时巡查(默认关闭)"},
 		{Name: "patrol_interval", Type: pluginapi.ConfigFieldTypeNumber, Description: "巡查周期(秒,默认3600=60分钟；UI 以分钟编辑)"},
 		{Name: "patrol_timeout", Type: pluginapi.ConfigFieldTypeNumber, Description: "单个凭证探测超时(秒,默认15)"},
-		{Name: "patrol_batch_size", Type: pluginapi.ConfigFieldTypeNumber, Description: "每轮巡查上限(0=不限)"},
+		{Name: "patrol_batch_size", Type: pluginapi.ConfigFieldTypeNumber, Description: "每轮上限；全量0=不限；增量0=默认100"},
 		{Name: "patrol_auth_dir", Type: pluginapi.ConfigFieldTypeString, Description: "auth file 所在目录(如 /root/.cli-proxy-api)"},
 		{Name: "patrol_proxy_url", Type: pluginapi.ConfigFieldTypeString, Description: "巡查探测使用的代理(可选,如 socks5://host:port)"},
 		{Name: "patrol_concurrency", Type: pluginapi.ConfigFieldTypeNumber, Description: "巡查并发硬上限(默认24；实际线程在上限内按负载/探测健康弹性伸缩)"},

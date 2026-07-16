@@ -65,31 +65,37 @@ func TestPatrolStillDeletesInvalidCredentials401(t *testing.T) {
 	}
 }
 
-// TestPatrolPermissionDenied200Reenables: 复核 200 时恢复 permission_denied 禁用号。
-func TestPatrolPermissionDenied200Reenables(t *testing.T) {
+func setupPermDeniedDisabled(t *testing.T, status int, body string) (*Guard, *memAuth, string, string, *http.Client) {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
 	dir := t.TempDir()
-	name := "xai-perm.json"
+	name := "xai-403-disabled.json"
 	raw := []byte(fmt.Sprintf(`{"access_token":"token","base_url":%q,"disabled":true}`, srv.URL))
 	if err := os.WriteFile(filepath.Join(dir, name), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	auth := newMemAuth(AuthFile{AuthIndex: "xp", Name: name, Provider: "xai", Disabled: true})
+	auth := newMemAuth(AuthFile{AuthIndex: "xpd", Name: name, Provider: "xai", Disabled: true})
 	g, err := NewGuard(Config{Enabled: true, ManagementURL: "http://cpa", ManagementKey: "key", PatrolModel: "grok-test", MaxResetSeconds: 86400}, auth, &memLog{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = g.storeUpsert(AccountRecord{
-		AuthIndex: "xp", FileName: name, Provider: "xai",
+		AuthIndex: "xpd", FileName: name, Provider: "xai",
 		DisableSource: SourcePluginAuto, State: StateAutoDisabled,
 		RecoverAtMS: 0, Owner: Owner, Signal: "permission_denied", Reason: "prior 403",
 	})
-	r := g.probeOneCredential(AuthFile{AuthIndex: "xp", Name: name, Provider: "xai", Disabled: true}, dir, srv.Client(), "spending_only")
+	return g, auth, dir, name, srv.Client()
+}
+
+// TestPatrolPermissionDenied200Reenables: 冷却复核 200 时恢复 permission_denied 禁用号。
+func TestPatrolPermissionDenied200Reenables(t *testing.T) {
+	g, auth, dir, name, client := setupPermDeniedDisabled(t, http.StatusOK, `{"ok":true}`)
+	r := g.probeOneCredential(AuthFile{AuthIndex: "xpd", Name: name, Provider: "xai", Disabled: true}, dir, client, "spending_only")
 	if r.action != "reenabled" {
 		t.Fatalf("result=%+v want reenabled", r)
 	}
@@ -97,7 +103,53 @@ func TestPatrolPermissionDenied200Reenables(t *testing.T) {
 	if len(files) != 1 || files[0].Disabled {
 		t.Fatalf("must re-enable: %+v", files)
 	}
-	if rec := g.storeGet("xp"); rec != nil && rec.State == StateAutoDisabled {
+	if rec := g.storeGet("xpd"); rec != nil && rec.State == StateAutoDisabled {
 		t.Fatalf("store must clear auto_disabled: %+v", rec)
+	}
+}
+
+// TestPatrolPurge403DeletesOnReconfirm: scope=permission_denied 再测仍 403 → 删除。
+func TestPatrolPurge403DeletesOnReconfirm(t *testing.T) {
+	body403 := `{"code":"permission-denied","error":"Access to the chat endpoint is denied. Please ensure you're using the correct credentials."}`
+
+	// Non-purge: spending_only keeps disabled file.
+	gKeep, authKeep, dirKeep, nameKeep, clientKeep := setupPermDeniedDisabled(t, http.StatusForbidden, body403)
+	rKeep := gKeep.probeOneCredential(AuthFile{AuthIndex: "xpd", Name: nameKeep, Provider: "xai", Disabled: true}, dirKeep, clientKeep, "spending_only")
+	if rKeep.action == "deleted" {
+		t.Fatalf("non-purge must not delete: %+v", rKeep)
+	}
+	if rKeep.action != "disabled" {
+		t.Fatalf("non-purge still-403 want disabled, got %+v", rKeep)
+	}
+	filesKeep, _ := authKeep.List()
+	if len(filesKeep) != 1 || !filesKeep[0].Disabled {
+		t.Fatalf("non-purge must keep disabled file: %+v", filesKeep)
+	}
+
+	// Purge scope: still 403 → DELETE.
+	g, auth, dir, name, client := setupPermDeniedDisabled(t, http.StatusForbidden, body403)
+	r := g.probeOneCredential(AuthFile{AuthIndex: "xpd", Name: name, Provider: "xai", Disabled: true}, dir, client, "permission_denied")
+	if r.action != "deleted" {
+		t.Fatalf("purge scope still-403 must delete, got %+v", r)
+	}
+	files, _ := auth.List()
+	if len(files) != 0 {
+		t.Fatalf("credential must be deleted: %+v", files)
+	}
+	if rec := g.storeGet("xpd"); rec != nil {
+		t.Fatalf("store record must be removed: %+v", rec)
+	}
+}
+
+// TestPatrolPurge403ReenablesOn200: 测试/删除路径 200 → 恢复。
+func TestPatrolPurge403ReenablesOn200(t *testing.T) {
+	g, auth, dir, name, client := setupPermDeniedDisabled(t, http.StatusOK, `{"ok":true}`)
+	r := g.probeOneCredential(AuthFile{AuthIndex: "xpd", Name: name, Provider: "xai", Disabled: true}, dir, client, "permission_denied")
+	if r.action != "reenabled" {
+		t.Fatalf("result=%+v want reenabled", r)
+	}
+	files, _ := auth.List()
+	if len(files) != 1 || files[0].Disabled {
+		t.Fatalf("must re-enable: %+v", files)
 	}
 }

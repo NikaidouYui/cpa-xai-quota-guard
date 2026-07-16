@@ -10,12 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// DefaultIncrementalBatch is used when scope=incremental and patrol_batch_size is 0.
+const DefaultIncrementalBatch = 100
 
 // DefaultPatrolModel is the default probe model for patrol.
 // Paid models (e.g. grok-3 full) often return personal-team-blocked:spending-limit
@@ -93,6 +97,11 @@ type patrolState struct {
 	// probeCtx cancels in-flight HTTP when stop/abort so workers release quickly
 	probeCtx    context.Context
 	probeCancel context.CancelFunc
+	// incremental cursor advance (only committed on clean completion)
+	incrementalCursor     string // start cursor used this sweep
+	incrementalNextCursor string // to persist if sweep finishes cleanly
+	incrementalPoolSize   int    // enabled pool size before batch slice
+	incrementalBatchLimit int
 }
 
 // patrolLogEntry is an alias of durable PatrolLogEntry.
@@ -124,6 +133,11 @@ type PatrolStatus struct {
 	Scope           string           `json:"scope,omitempty"`
 	SavedAtMS       int64            `json:"saved_at_ms,omitempty"`
 	RecentLog       []patrolLogEntry `json:"recent_log,omitempty"`
+	// Incremental (scope=incremental) progress for UI.
+	IncCursor     string `json:"inc_cursor,omitempty"`
+	IncNextCursor string `json:"inc_next_cursor,omitempty"`
+	IncPoolSize   int    `json:"inc_pool_size,omitempty"`
+	IncBatchLimit int    `json:"inc_batch_limit,omitempty"`
 }
 
 // authFileJSON is the on-disk structure of a CPA auth file.
@@ -422,9 +436,52 @@ func probeErrorKind(httpCode int, reason string) string {
 // PatrolOptions controls one sweep.
 type PatrolOptions struct {
 	// Scope: ""/"all" = enabled xAI only;
+	// "incremental" = enabled xAI only, rotating batch via durable cursor;
 	// "spending_only" = plugin_auto disabled cooldowns only (no enabled accounts).
 	// "cpa_disabled" = disabled xAI without plugin ownership, manually requested only.
+	// "permission_denied" = only plugin_auto permission_denied (403) accounts;
+	//   re-probe: 200 re-enable, still 403/401 DELETE (manual test/purge path).
 	Scope string `json:"scope"`
+}
+
+// selectIncrementalBatch returns a wrap-around window from a stably sorted auth list.
+// cursor is the AuthIndex to start from (inclusive; next valid if missing).
+// nextCursor is where the following sweep should start.
+func selectIncrementalBatch(files []AuthFile, cursor string, limit int) (batch []AuthFile, nextCursor string) {
+	if len(files) == 0 {
+		return nil, ""
+	}
+	sorted := append([]AuthFile(nil), files...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].AuthIndex != sorted[j].AuthIndex {
+			return sorted[i].AuthIndex < sorted[j].AuthIndex
+		}
+		return sorted[i].Name < sorted[j].Name
+	})
+	if limit <= 0 || limit >= len(sorted) {
+		// Full pass this round; next sweep restarts at head.
+		return sorted, ""
+	}
+	start := 0
+	cursor = strings.TrimSpace(cursor)
+	if cursor != "" {
+		start = -1
+		for i, f := range sorted {
+			if f.AuthIndex >= cursor {
+				start = i
+				break
+			}
+		}
+		if start < 0 {
+			start = 0 // all keys < cursor → wrap
+		}
+	}
+	batch = make([]AuthFile, 0, limit)
+	for i := 0; i < limit; i++ {
+		batch = append(batch, sorted[(start+i)%len(sorted)])
+	}
+	nextCursor = sorted[(start+limit)%len(sorted)].AuthIndex
+	return batch, nextCursor
 }
 
 // clampPatrolUserMax normalizes the user-configured hard upper bound.
@@ -674,6 +731,10 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 	g.patrol.lastError = ""
 	g.patrol.lastSweepLog = nil
 	g.patrol.scope = ""
+	g.patrol.incrementalCursor = ""
+	g.patrol.incrementalNextCursor = ""
+	g.patrol.incrementalPoolSize = 0
+	g.patrol.incrementalBatchLimit = 0
 	g.patrol.lastPersistMS = 0
 	g.patrol.stopRequested = false
 	g.patrol.consecutiveNetFails = 0
@@ -727,7 +788,10 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 		scope = "all"
 	}
 	// all: ONLY currently-enabled xAI credentials (skip any disabled, including cooldowns)
-	// spending_only / cooldown recheck: ONLY plugin_auto owned disabled cooldowns
+	// incremental: same pool as all, but rotating window (durable cursor + batch limit)
+	// spending_only / cooldown recheck: plugin_auto owned disabled cooldowns
+	//   (includes permission_denied for non-destructive recheck / 200 recover)
+	// permission_denied: ONLY plugin_auto signal=permission_denied (403 测试/删除)
 	// cpa_disabled: ONLY CPA-disabled credentials without plugin/manual ownership
 	//   (429 free-usage + 402 spending_limit); never probe still-enabled accounts
 	candidates := make([]AuthFile, 0, len(files))
@@ -736,6 +800,8 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 			continue
 		}
 		live := g.storeGet(f.AuthIndex)
+		isPermDenied := live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
+			live.Owner == Owner && !live.PreDisabled && live.Signal == "permission_denied"
 		isPluginCool := live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
 			live.Owner == Owner && !live.PreDisabled &&
 			(live.Signal == "spending_limit" || live.Signal == "body.error.code=subscription:free-usage-exhausted" ||
@@ -748,13 +814,23 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 		}
 		switch scope {
 		case "spending_only":
-			// button: 仅复核冷却号 — disabled cool-down accounts only
+			// button: 仅复核冷却号 — disabled cool-down accounts only (non-destructive for 403)
 			if f.Disabled && isPluginCool {
+				candidates = append(candidates, f)
+			}
+		case "permission_denied":
+			// button: 测试/删除 403 — only soft-disabled permission_denied accounts
+			if f.Disabled && isPermDenied {
 				candidates = append(candidates, f)
 			}
 		case "cpa_disabled":
 			isManual := live != nil && (live.State == StateUserManualDisabled || live.DisableSource == SourceUserManual || live.PreDisabled)
 			if f.Disabled && !isPluginCool && !isManual {
+				candidates = append(candidates, f)
+			}
+		case "incremental":
+			// button: 增量巡检 — enabled only; batch+cursor applied below
+			if !f.Disabled {
 				candidates = append(candidates, f)
 			}
 		default: // all / full patrol
@@ -764,15 +840,38 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 			}
 		}
 	}
+	incCursor := ""
+	incNext := ""
+	incPool := len(candidates)
+	incBatchLimit := 0
+	if scope == "incremental" {
+		incCursor = ""
+		if g.store != nil {
+			incCursor = g.store.GetIncrementalCursor()
+		}
+		limit := cfg.PatrolBatchSize
+		if limit <= 0 {
+			limit = DefaultIncrementalBatch
+		}
+		incBatchLimit = limit
+		candidates, incNext = selectIncrementalBatch(candidates, incCursor, limit)
+		g.logf("info", "patrol incremental pool=%d batch=%d cursor=%q next=%q selected=%d",
+			incPool, limit, incCursor, incNext, len(candidates))
+	} else {
+		// Non-incremental: optional hard truncate from head (legacy batch, no rotation).
+		batchLimit := cfg.PatrolBatchSize
+		if batchLimit > 0 && batchLimit < len(candidates) {
+			candidates = candidates[:batchLimit]
+		}
+	}
 	g.patrol.mu.Lock()
 	g.patrol.scope = scope
+	g.patrol.incrementalCursor = incCursor
+	g.patrol.incrementalNextCursor = incNext
+	g.patrol.incrementalPoolSize = incPool
+	g.patrol.incrementalBatchLimit = incBatchLimit
 	g.patrol.mu.Unlock()
 	g.logf("info", "patrol scope=%s candidates=%d auto_model_switch=%v model=%s", scope, len(candidates), cfg.PatrolAutoModelSwitch, cfg.PatrolModel)
-
-	batchLimit := cfg.PatrolBatchSize
-	if batchLimit > 0 && batchLimit < len(candidates) {
-		candidates = candidates[:batchLimit]
-	}
 
 	userMax := clampPatrolUserMax(cfg.PatrolConcurrency)
 	initial := resolvePatrolWorkers(userMax, len(candidates))
@@ -975,6 +1074,25 @@ func (g *Guard) PatrolSweep(opts PatrolOptions) PatrolStatus {
 	close(jobs)
 	wg.Wait()
 	atomic.StoreInt32(&controllerDone, 1)
+
+	// Advance incremental cursor only on clean completion (not stop / net abort).
+	if scope == "incremental" && g.store != nil {
+		g.patrol.mu.Lock()
+		stopped := g.patrol.stopRequested
+		lastErr := g.patrol.lastError
+		next := g.patrol.incrementalNextCursor
+		g.patrol.mu.Unlock()
+		aborted := stopped || strings.Contains(lastErr, "中止") || strings.Contains(strings.ToLower(lastErr), "abort")
+		if !aborted {
+			if err := g.store.SetIncrementalCursor(next); err != nil {
+				g.logf("warn", "patrol incremental cursor persist failed: %v", err)
+			} else {
+				g.logf("info", "patrol incremental cursor advanced → %q", next)
+			}
+		} else {
+			g.logf("info", "patrol incremental cursor kept (aborted/stopped) at %q", g.patrol.incrementalCursor)
+		}
+	}
 
 	return g.PatrolStatus()
 }
@@ -1637,7 +1755,10 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 			action: probeErrorKind(code, "content_safety"), reason: fmt.Sprintf("内容安全拦截(不删) model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
 		}
 	}
-	// True 403 permission-denied: soft-disable (keep credential file).
+	// Manual 403 test/purge scope: re-confirmed dead credential → DELETE.
+	purge403 := scope == "permission_denied"
+
+	// True 403 permission-denied: default soft-disable; purge scope deletes after re-confirm.
 	if IsPermissionDenied(code, bodyStr) {
 		if externalReview {
 			return probeResult{
@@ -1645,7 +1766,10 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 				action: "external_invalid", reason: fmt.Sprintf("CPA 禁用复查确认权限拒绝，保持禁用且不接管 model=%s · %s", model, truncate(bodyStr, 180)), httpCode: code, modelUsed: model,
 			}
 		}
-		// Already under our permanent permission disable → keep.
+		if purge403 {
+			return g.patrolDeleteDead(f, code, bodyStr, model, "403 permission-denied 测试确认后删除")
+		}
+		// Already under our permanent permission disable → keep (non-purge scopes).
 		if live != nil && live.State == StateAutoDisabled && live.DisableSource == SourcePluginAuto &&
 			live.Signal == "permission_denied" && live.Owner == Owner && !live.PreDisabled {
 			rec := *live
@@ -1702,7 +1826,7 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 			action: "disabled", reason: fmt.Sprintf("403 permission-denied model=%s · %s", model, truncate(bodyStr, 120)), httpCode: code, modelUsed: model,
 		}
 	}
-	// 401 invalid credentials: still DELETE.
+	// 401 invalid credentials: DELETE (also on 403 purge scope recheck).
 	if IsInvalidCredentials(code, bodyStr) {
 		if externalReview {
 			return probeResult{
@@ -1710,28 +1834,11 @@ func (g *Guard) probeOneCredential(f AuthFile, authDir string, client *http.Clie
 				action: "external_invalid", reason: fmt.Sprintf("CPA 禁用复查确认凭证失效，保持禁用且不接管 model=%s · %s", model, truncate(bodyStr, 180)), httpCode: code, modelUsed: model,
 			}
 		}
-		if err := g.auth.Delete(f.AuthIndex); err != nil {
-			return probeResult{
-				authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-				action: "error", reason: fmt.Sprintf("delete failed: %v", err), httpCode: code,
-			}
+		label := "401 凭证失效"
+		if purge403 {
+			label = "401 凭证失效(403测试路径)"
 		}
-		_ = g.storeRemove(f.AuthIndex)
-		if g.store != nil {
-			_ = g.store.AppendDelete(DeleteEvent{
-				AuthIndex: f.AuthIndex, FileName: f.Name, Account: f.Account, Provider: "xai",
-				Reason: fmt.Sprintf("patrol: %s", truncate(bodyStr, 240)), DeletedAtMS: time.Now().UnixMilli(),
-			})
-		}
-		g.logf("warn", "patrol 删除 401 死号 auth=%s file=%s code=%d reason=%s", f.AuthIndex, f.Name, code, truncate(bodyStr, 120))
-		g.NotifyWebhook("patrol_dead_credential_delete", map[string]any{
-			"auth_index": f.AuthIndex, "file_name": f.Name, "account": f.Account,
-			"http_code": code, "reason": truncate(bodyStr, 160),
-		})
-		return probeResult{
-			authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
-			action: "deleted", reason: fmt.Sprintf("model=%s · %s", model, truncate(bodyStr, 180)), httpCode: code, modelUsed: model,
-		}
+		return g.patrolDeleteDead(f, code, bodyStr, model, label)
 	}
 
 	// Other codes: probe failure / ambiguous — do NOT mark alive.
@@ -1901,7 +2008,7 @@ func (g *Guard) PatrolStatusWith(opts PatrolStatusOpts) PatrolStatus {
 	for k, n := range g.patrol.byAction {
 		byAction[k] = n
 	}
-	return PatrolStatus{
+	st := PatrolStatus{
 		Running:         g.patrol.running,
 		StartedAtMS:     g.patrol.startedAtMS,
 		CompletedAtMS:   g.patrol.completedAtMS,
@@ -1925,7 +2032,16 @@ func (g *Guard) PatrolStatusWith(opts PatrolStatusOpts) PatrolStatus {
 		LastError:       g.patrol.lastError,
 		Scope:           g.patrol.scope,
 		RecentLog:       log,
+		IncCursor:       g.patrol.incrementalCursor,
+		IncNextCursor:   g.patrol.incrementalNextCursor,
+		IncPoolSize:     g.patrol.incrementalPoolSize,
+		IncBatchLimit:   g.patrol.incrementalBatchLimit,
 	}
+	// When idle, still expose durable cursor so UI can show progress.
+	if !g.patrol.running && st.IncCursor == "" && g.store != nil {
+		st.IncCursor = g.store.GetIncrementalCursor()
+	}
+	return st
 }
 
 // selectPatrolLogForUI returns newest-first log, preferring non-alive actions so
@@ -2033,6 +2149,78 @@ func (g *Guard) PatrolRunCPADisabled() PatrolStatus {
 		}
 	}
 	return g.PatrolStatus()
+}
+
+// PatrolRunPermissionDenied probes only soft-disabled 403 (permission_denied) accounts.
+// 200 re-enables; still 403/401 DELETEs the credential (manual test/purge).
+func (g *Guard) PatrolRunPermissionDenied() PatrolStatus {
+	g.patrol.mu.Lock()
+	if g.patrol.running {
+		g.patrol.mu.Unlock()
+		return g.PatrolStatus()
+	}
+	g.patrol.mu.Unlock()
+	go g.PatrolSweep(PatrolOptions{Scope: "permission_denied"})
+	for i := 0; i < 20; i++ {
+		time.Sleep(25 * time.Millisecond)
+		st := g.PatrolStatus()
+		if st.Running || st.CompletedAtMS > 0 {
+			return st
+		}
+	}
+	return g.PatrolStatus()
+}
+
+// PatrolRunIncremental probes the next rotating batch of enabled xAI credentials.
+// Cursor is durable; batch size = patrol_batch_size or DefaultIncrementalBatch.
+func (g *Guard) PatrolRunIncremental() PatrolStatus {
+	g.patrol.mu.Lock()
+	if g.patrol.running {
+		g.patrol.mu.Unlock()
+		return g.PatrolStatus()
+	}
+	g.patrol.mu.Unlock()
+	go g.PatrolSweep(PatrolOptions{Scope: "incremental"})
+	for i := 0; i < 20; i++ {
+		time.Sleep(25 * time.Millisecond)
+		st := g.PatrolStatus()
+		if st.Running || st.CompletedAtMS > 0 {
+			return st
+		}
+	}
+	return g.PatrolStatus()
+}
+
+// patrolDeleteDead removes a confirmed dead credential during patrol.
+func (g *Guard) patrolDeleteDead(f AuthFile, code int, bodyStr, model, label string) probeResult {
+	if g.auth == nil {
+		return probeResult{
+			authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+			action: "error", reason: "delete failed: auth lookup nil", httpCode: code, modelUsed: model,
+		}
+	}
+	if err := g.auth.Delete(f.AuthIndex); err != nil {
+		return probeResult{
+			authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+			action: "error", reason: fmt.Sprintf("delete failed: %v", err), httpCode: code, modelUsed: model,
+		}
+	}
+	_ = g.storeRemove(f.AuthIndex)
+	if g.store != nil {
+		_ = g.store.AppendDelete(DeleteEvent{
+			AuthIndex: f.AuthIndex, FileName: f.Name, Account: f.Account, Provider: "xai",
+			Reason: fmt.Sprintf("patrol: %s · %s", label, truncate(bodyStr, 200)), DeletedAtMS: time.Now().UnixMilli(),
+		})
+	}
+	g.logf("warn", "patrol 删除死号 (%s) auth=%s file=%s code=%d reason=%s", label, f.AuthIndex, f.Name, code, truncate(bodyStr, 120))
+	g.NotifyWebhook("patrol_dead_credential_delete", map[string]any{
+		"auth_index": f.AuthIndex, "file_name": f.Name, "account": f.Account,
+		"http_code": code, "reason": truncate(bodyStr, 160), "label": label, "model": model,
+	})
+	return probeResult{
+		authIndex: f.AuthIndex, fileName: f.Name, account: f.Account,
+		action: "deleted", reason: fmt.Sprintf("%s model=%s · %s", label, model, truncate(bodyStr, 160)), httpCode: code, modelUsed: model,
+	}
 }
 
 func (g *Guard) PatrolRunOnce() PatrolStatus {
