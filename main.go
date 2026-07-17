@@ -68,7 +68,7 @@ import (
 
 const (
 	pluginID   = "cpa-xai-quota-guard"
-	pluginVer  = "0.3.15"
+	pluginVer  = "0.3.16"
 	pluginAuth = "@mortal"
 	pluginRepo = "https://github.com/mortal/cpa-xai-quota-guard"
 	pluginLogo = ""
@@ -153,9 +153,9 @@ func cgoHostCall(method string, request []byte) ([]byte, error) {
 }
 
 type envelope struct {
-	OK     bool             `json:"ok"`
-	Result json.RawMessage  `json:"result,omitempty"`
-	Error  *envelopeError   `json:"error,omitempty"`
+	OK     bool            `json:"ok"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *envelopeError  `json:"error,omitempty"`
 }
 
 type envelopeError struct {
@@ -286,7 +286,6 @@ func pluginRegistration(request []byte) registration {
 		},
 	}
 }
-
 
 func handleUsageEvent(request []byte) ([]byte, error) {
 	if len(request) == 0 {

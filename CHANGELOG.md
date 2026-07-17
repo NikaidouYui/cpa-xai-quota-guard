@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.16
+
+- **清理重复凭证**：新增 `GET/POST /cpa-xai-quota-guard/dedupe`
+  - 按账号邮箱（或文件名身份，如 `xai_oauth_*_YYYYMMDDTHHMMSSZ.json`）分组
+  - **每组只保留最新上传**（优先文件名时间戳，其次 mtime），删除其余副本
+  - UI「账号状态」卡片提供「清理重复凭证」按钮：先预览再确认删除
+  - 删除写入 delete/action 历史，`source=dedupe` / `signal=duplicate`
+- 版本号 / registry 同步 **0.3.16**
+
 ## 0.3.15
 
 - **测试/删除 403**：新增手动巡查范围 `patrol/permission-denied`（UI「测试/删除403」）

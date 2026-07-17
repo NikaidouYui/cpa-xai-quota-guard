@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,34 +49,38 @@ type mgmtAuthEntry struct {
 	Tag         string `json:"tag"`
 	AccountType string `json:"account_type"`
 	Type        string `json:"type"`
+	// CPA may emit these as RFC3339 strings or numeric unix.
+	ModTime   any `json:"modtime"`
+	UpdatedAt any `json:"updated_at"`
+	CreatedAt any `json:"created_at"`
 }
 
 // Short-lived cache so state/health/tick do not re-pull 5k+ auth-files every request.
 // On fetch failure, return last good inventory (sticky) so UI never flashes xai_total=0.
 var (
-	authListCacheMu    sync.Mutex
-	authListCacheAt    time.Time
-	authListCacheKey   string
-	authListCacheData  []xaiquota.AuthFile
-	authListLastErr    string
-	authListLastStale  bool
-	authListLastXAI    int
-	authListLastEn     int
-	authListLastDis    int
+	authListCacheMu   sync.Mutex
+	authListCacheAt   time.Time
+	authListCacheKey  string
+	authListCacheData []xaiquota.AuthFile
+	authListLastErr   string
+	authListLastStale bool
+	authListLastXAI   int
+	authListLastEn    int
+	authListLastDis   int
 )
 
 const authListCacheTTL = 12 * time.Second
 const authListStaleMax = 10 * time.Minute
 
 type authListMeta struct {
-	OK        bool   `json:"ok"`
-	Stale     bool   `json:"stale"`
-	Error     string `json:"error,omitempty"`
-	CachedAt  int64  `json:"cached_at_ms,omitempty"`
-	AgeMS     int64  `json:"age_ms,omitempty"`
-	XAITotal  int    `json:"xai_total"`
-	XAIEnabled int   `json:"xai_enabled"`
-	XAIDisabled int  `json:"xai_disabled"`
+	OK          bool   `json:"ok"`
+	Stale       bool   `json:"stale"`
+	Error       string `json:"error,omitempty"`
+	CachedAt    int64  `json:"cached_at_ms,omitempty"`
+	AgeMS       int64  `json:"age_ms,omitempty"`
+	XAITotal    int    `json:"xai_total"`
+	XAIEnabled  int    `json:"xai_enabled"`
+	XAIDisabled int    `json:"xai_disabled"`
 }
 
 func authListInventoryMeta() authListMeta {
@@ -178,6 +183,13 @@ func (m *mgmtAuth) List() ([]xaiquota.AuthFile, error) {
 		if at == "" {
 			at = f.Type
 		}
+		modMS := parseAnyTimeMS(f.ModTime)
+		if modMS == 0 {
+			modMS = parseAnyTimeMS(f.UpdatedAt)
+		}
+		if modMS == 0 {
+			modMS = parseAnyTimeMS(f.CreatedAt)
+		}
 		out = append(out, xaiquota.AuthFile{
 			AuthIndex:   f.AuthIndex,
 			Name:        f.Name,
@@ -186,6 +198,7 @@ func (m *mgmtAuth) List() ([]xaiquota.AuthFile, error) {
 			Disabled:    f.Disabled,
 			Success:     f.Success,
 			Failed:      f.Failed,
+			ModTimeMS:   modMS,
 			Note:        f.Note,
 			Label:       f.Label,
 			Prefix:      f.Prefix,
@@ -258,7 +271,6 @@ func (m *mgmtAuth) SetDisabled(authIndex string, disabled bool) (bool, error) {
 	return prev, nil
 }
 
-
 func (m *mgmtAuth) Delete(authIndex string) error {
 	if m == nil || m.url == "" || m.key == "" {
 		return fmt.Errorf("management not configured")
@@ -302,6 +314,54 @@ func mgmtHTTPDelete(target, key string) error {
 		return fmt.Errorf("mgmt DELETE %s status %d: %s", target, resp.StatusCode, truncate(string(raw), 160))
 	}
 	return nil
+}
+
+// parseAnyTimeMS converts CPA time fields (RFC3339 string / unix sec or ms) to unix millis.
+func parseAnyTimeMS(v any) int64 {
+	switch t := v.(type) {
+	case nil:
+		return 0
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0
+		}
+		for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05Z07:00"} {
+			if ts, err := time.Parse(layout, s); err == nil {
+				return ts.UnixMilli()
+			}
+		}
+		// numeric string
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil && n > 0 {
+			if n > 1e12 {
+				return n
+			}
+			return n * 1000
+		}
+	case float64:
+		if t <= 0 {
+			return 0
+		}
+		if t > 1e12 {
+			return int64(t)
+		}
+		return int64(t * 1000)
+	case int64:
+		if t <= 0 {
+			return 0
+		}
+		if t > 1e12 {
+			return t
+		}
+		return t * 1000
+	case int:
+		return parseAnyTimeMS(int64(t))
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			return parseAnyTimeMS(i)
+		}
+	}
+	return 0
 }
 
 func urlEncode(s string) string {
@@ -349,7 +409,6 @@ func mgmtHTTP(method, target string, body []byte, key string) ([]byte, error) {
 	}
 	return raw, nil
 }
-
 
 // writePluginConfig merges patch into CPA plugin config and PUTs full config back.
 // CPA partial PUT replaces the whole plugin config block, so we always GET+merge first.

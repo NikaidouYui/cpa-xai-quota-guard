@@ -482,8 +482,9 @@ table.acc tbody tr.row-manual{background:var(--row-manual-bg)}
     </div>
   </div>
   <div class="card">
-    <div class="row" style="justify-content:space-between;gap:.5rem;margin-bottom:.35rem">
+    <div class="row" style="justify-content:space-between;gap:.5rem;margin-bottom:.35rem;align-items:flex-start;flex-wrap:wrap">
       <div><div class="card-title">账号状态</div><div class="card-desc">与状态栏凭证同源 · 固定分页 · 默认只看异常/有用量 · 倒计时本地刷新不重拉列表</div></div>
+      <button type="button" id="dedupeBtn" class="off" onclick="dedupeStart()" title="按账号/文件身份去重：同邮箱只保留最新上传（文件名时间戳或修改时间），删除其余副本">清理重复凭证</button>
     </div>
     <div class="acc-toolbar">
       <select id="accFilter" onchange="ACC_PAGE=1; onAccFilterChange()" style="min-width:150px">
@@ -1330,6 +1331,66 @@ async function resetTodayUsage(){
     alert("清零异常: "+(e&&e.message?e.message:e));
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = "清零今日已用"; }
+  }
+}
+function formatDedupePreview(res){
+  var groups = (res.plan && res.plan.groups) || [];
+  var lines = [];
+  lines.push("扫描 xAI 凭证: "+(res.scanned_xai||0));
+  lines.push("重复账号组: "+(res.group_count||0)+" · 将保留 "+(res.keep_count||0)+" · 将删除 "+(res.delete_count||0));
+  lines.push("");
+  var maxShow = Math.min(groups.length, 12);
+  for(var i=0;i<maxShow;i++){
+    var g = groups[i]||{};
+    var keep = g.keep||{};
+    var delN = (g.delete&&g.delete.length)||0;
+    var delNames = (g.delete||[]).slice(0,3).map(function(d){ return d.file_name||d.auth_index||"?"; }).join("；");
+    if(delN>3) delNames += " 等"+delN+"个";
+    lines.push("· "+(g.identity||"?")+" ×"+((g.count)||0));
+    lines.push("  保留: "+(keep.file_name||keep.auth_index||"—"));
+    lines.push("  删除: "+(delNames||"—"));
+  }
+  if(groups.length>maxShow) lines.push("… 另有 "+(groups.length-maxShow)+" 组未展开");
+  return lines.join("\n");
+}
+async function dedupeStart(){
+  var btn = document.getElementById("dedupeBtn");
+  if(btn){ btn.disabled = true; btn.textContent = "扫描重复…"; }
+  try {
+    var prev = await api("dedupe", {method:"GET", timeout_ms: 60000});
+    if(!prev || !prev.ok){
+      alert("预览失败: "+JSON.stringify(prev&&prev.error||prev));
+      return;
+    }
+    var res = (prev.result!=null)?prev.result:prev;
+    var delN = res.delete_count||0;
+    if(delN<=0){
+      alert("未发现重复 xAI 凭证\n扫描 "+(res.scanned_xai||0)+" 个 · 可分组身份 "+(res.unique_keys||0));
+      return;
+    }
+    var msg = "清理重复凭证（保留最新上传）\n\n"+formatDedupePreview(res)
+      +"\n\n确认后将真实删除较旧副本（不可恢复）。是否继续？";
+    if(!confirm(msg)) return;
+    if(btn) btn.textContent = "删除中…";
+    var exec = await api("dedupe", {method:"POST", body:{confirm:true}, timeout_ms: 120000});
+    if(!exec || !exec.ok){
+      alert("执行失败: "+JSON.stringify(exec&&exec.error||exec));
+      return;
+    }
+    var out = (exec.result!=null)?exec.result:exec;
+    var failN = out.failed_count||0;
+    var okN = out.deleted_count||0;
+    var tail = "已删除 "+okN+" 个重复凭证";
+    if(failN>0){
+      var ferr = (out.failed||[]).slice(0,5).map(function(f){ return (f.file_name||f.auth_index||"?")+": "+(f.error||""); }).join("\n");
+      tail += "\n失败 "+failN+"：\n"+ferr;
+    }
+    alert(tail+"\n保留 "+(out.keep_count||0)+" 组最新凭证");
+    loadState();
+  } catch(e){
+    alert("去重异常: "+(e&&e.message?e.message:e));
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = "清理重复凭证"; }
   }
 }
 async function runBackfill(){

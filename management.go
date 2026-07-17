@@ -71,7 +71,7 @@ func buildManagementRegistration() managementRegistration {
 			{
 				Path:        "/index.html",
 				Menu:        "xAI Quota Guard",
-				Description: "xAI 短时额度自动禁用、到期恢复；403 软禁用；手动测试/删除 403",
+				Description: "xAI 短时额度自动禁用、到期恢复；403 软禁用；手动测试/删除 403；清理重复凭证",
 			},
 		},
 		Routes: []managementRoute{
@@ -94,6 +94,8 @@ func buildManagementRegistration() managementRegistration {
 			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/stop", Description: "停止当前巡查"},
 			{Method: "POST", Path: "/cpa-xai-quota-guard/patrol/config", Description: "保存定时巡查配置"},
 			{Method: "GET", Path: "/cpa-xai-quota-guard/patrol/models", Description: "探测可用模型列表(凭证 /models + 建议)"},
+			{Method: "GET", Path: "/cpa-xai-quota-guard/dedupe", Description: "预览重复 xAI 凭证（按账号/文件身份，保留最新）"},
+			{Method: "POST", Path: "/cpa-xai-quota-guard/dedupe", Description: "删除重复 xAI 凭证（confirm=true；每组保留最新上传）"},
 		},
 	}
 }
@@ -210,6 +212,8 @@ func dispatchAPI(req managementRequest, action string) ([]byte, error) {
 		return patrolConfigResponse(req)
 	case "patrol/models":
 		return patrolModelsResponse()
+	case "dedupe", "duplicates":
+		return dedupeResponse(req)
 	default:
 		return okEnvelope(managementResponse{
 			StatusCode: http.StatusNotFound,
@@ -702,6 +706,89 @@ func healthResponse() ([]byte, error) {
 
 func deletesResponse() ([]byte, error) {
 	return jsonResponse(map[string]any{"items": guard().ListDeletes(50)})
+}
+
+// dedupeResponse previews (GET) or executes (POST confirm=true) duplicate xAI credential cleanup.
+// Keep rule: same account/identity → keep newest upload (filename stamp, else mtime).
+func dedupeResponse(req managementRequest) ([]byte, error) {
+	method := strings.ToUpper(strings.TrimSpace(req.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+	g := guard()
+	cfg := g.Config()
+	if cfg.ManagementURL == "" || cfg.ManagementKey == "" {
+		return jsonResponse(map[string]any{
+			"ok":    false,
+			"error": "management not configured",
+			"hint":  "需要 management_url + management_key 才能列/删凭证",
+		})
+	}
+
+	// GET or POST without confirm → dry-run preview
+	dryRun := true
+	if method == http.MethodPost {
+		var body struct {
+			Confirm bool `json:"confirm"`
+			DryRun  bool `json:"dry_run"`
+		}
+		_ = json.Unmarshal(req.Body, &body)
+		if body.DryRun {
+			dryRun = true
+		} else if body.Confirm {
+			dryRun = false
+		} else {
+			// still return preview so UI can show plan before confirm
+			res, err := g.ExecuteDedupeXAI(true)
+			if err != nil {
+				return jsonResponse(map[string]any{"ok": false, "error": err.Error(), "version": pluginVer})
+			}
+			return jsonResponse(map[string]any{
+				"ok":           true,
+				"dry_run":      true,
+				"need_confirm": true,
+				"hint":         "POST {\"confirm\":true} 将删除较旧副本，每组仅保留最新上传",
+				"version":      pluginVer,
+				"group_count":  res.Plan.GroupCount,
+				"keep_count":   res.Plan.KeepCount,
+				"delete_count": res.Plan.DeleteCount,
+				"scanned_xai":  res.Plan.ScannedXAI,
+				"plan":         res.Plan,
+			})
+		}
+	} else if method != http.MethodGet && method != http.MethodPost {
+		return okEnvelope(managementResponse{
+			StatusCode: http.StatusMethodNotAllowed,
+			Headers:    http.Header{"content-type": []string{"application/json"}},
+			Body:       []byte(`{"error":"GET or POST required"}`),
+		})
+	}
+
+	res, err := g.ExecuteDedupeXAI(dryRun)
+	if err != nil {
+		return jsonResponse(map[string]any{"ok": false, "error": err.Error(), "version": pluginVer})
+	}
+	out := map[string]any{
+		"ok":            true,
+		"dry_run":       res.DryRun,
+		"version":       pluginVer,
+		"group_count":   res.Plan.GroupCount,
+		"keep_count":    res.Plan.KeepCount,
+		"delete_count":  res.Plan.DeleteCount,
+		"scanned_xai":   res.Plan.ScannedXAI,
+		"unique_keys":   res.Plan.UniqueKeys,
+		"deleted_count": res.DeletedCount,
+		"failed_count":  res.FailedCount,
+		"plan":          res.Plan,
+		"deleted":       res.Deleted,
+		"failed":        res.Failed,
+	}
+	if res.DryRun {
+		out["hint"] = "预览模式：未删除任何凭证。POST {\"confirm\":true} 执行删除（每组保留最新）"
+	} else {
+		out["hint"] = "已执行去重：删除较旧副本，保留最新上传"
+	}
+	return jsonResponse(out)
 }
 
 func metricsResetTodayResponse(req managementRequest) ([]byte, error) {

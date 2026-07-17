@@ -84,6 +84,8 @@ type AuthFile struct {
 	Disabled  bool
 	Success   int64
 	Failed    int64
+	// ModTimeMS is file mtime / auth updated_at when available (for dedupe recency fallback).
+	ModTimeMS int64
 	// Optional metadata for Free/Super/Heavy classification (from CPA auth-files list).
 	Note        string
 	Label       string
